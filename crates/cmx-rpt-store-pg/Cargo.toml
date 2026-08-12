@@ -1,0 +1,43 @@
+[package]
+name = "cmx-rpt-store-pg"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+# 报表模块的 PostgreSQL 持久化/服务层：全部 cr_* 报表数据字典物理表（fico-db）的读写、
+# 版式 BLOB(cr_report_fmt) + 关系投影(sheet/region/row/col/cell_element_map) 的事务重建、
+# 单元格数据(cr_cell_data) 按 org+period 的批量 UPSERT，以及 ZmcDataSet 零拷贝读（省内存）。
+# 接 cmx-database-pg 的全局 manager；表由 data/meta 定义建，本 crate 不建表（无 DDL）。
+
+[dependencies]
+# 内部依赖 - 报表中立模型（常量 + DTO）
+cmx-rpt-model = { workspace = true }
+# 内部依赖 - 报表函数引擎（compute_report 递归求值 + DataProvider trait，本 crate 提供 PG 实现）
+cmx-rpt-formula = { workspace = true }
+# 内部依赖 - tokio-postgres 并行 DB 层（事务/执行/查询门面 + ZmcRowSource 零拷贝）
+cmx-database-pg = { workspace = true }
+# 内部依赖 - 核心库（DataValue/SqlTypeMarker：强类型 SQL 绑定 + typed NULL）
+cmx-core = { workspace = true }
+# 内部依赖 - 工具（next_pk_id：主键铸号）
+cmx-utils = { workspace = true }
+# 内部依赖 - 业务错误（BizError → cmx_api_types::Error 的 From 桥接，供 api_err/? 用）
+cmx-biz = { workspace = true }
+# 内部依赖 - API 通用类型（Error/Result 信封，与 cmx-api 保持同一错误类型）
+cmx-api-types = { workspace = true }
+# 内部依赖 - 异步任务中心内核（RptComputeJob 实现 JobHandler + inventory 注册；批量报表计算作业化）
+cmx-job-core = { workspace = true }
+
+# 报表版式 BLOB：base64 编解码、SHA-256 内容哈希、Decimal 数值绑定
+base64 = { workspace = true }
+sha2 = { workspace = true }
+rust_decimal = { workspace = true }
+# JSON（请求体/结果集交换）
+serde_json = { workspace = true }
+# 异步 trait（PgProvider 实现 DataProvider）
+async-trait = { workspace = true }
+# 编译期注册（RptComputeJob 经 inventory::submit! 注册到任务中心）
+inventory = { workspace = true }
+# 计时（单报表耗时统计）+ 作业内 sleep（无，纯计算）
+tokio = { workspace = true }
+# 日志追踪
+tracing = { workspace = true }

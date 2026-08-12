@@ -1,0 +1,36 @@
+[package]
+name = "cmx-rpt-app"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+# cmx-rpt 的**平台中立应用层**：全部 axum handler + 路由表 report_routes::<S>() + 监控大盘。
+#
+# 抽核动机（对标 cmx-flow-app「一芯多壳」）：原 cmx-rpt-api 把 handler + 路由 + cmx-api 装配
+# （CmxAppState/CmxSvrContext）耦在一起。抽出后本 crate 只依赖 axum + 报表库 + cmx-api-types，
+# **不依赖 cmx-api**——比 flow 更省：report store 本就返回 cmx_api_types::Result，信封直用
+# cmx-api-types（与平台字节对齐），无需自建 resp.rs / 转换桥。
+#
+# 两壳复用同一核：
+#   - 平台壳 cmx-rpt-api（留 cmx-container）：ReportModule::routes() 调 report_routes::<CmxAppState>()。
+#   - 独立壳 cmx-rpt-server（本 workspace）：main 里 merge report_routes::<()>() + 大盘 + 数据源钩子。
+# handler 丢弃原来绑定不用的 State(_s)/CmxSvrContext(_ctx) 两提取器 → 与 AppState 类型无关，
+# 故路由对任意 state 泛型 S 成立，两壳零 handler 漂移。唯一身份 handler apply_ops 改走
+# cmx-traits::auth::context_scope::current_auth()（与平台 mw_auth 注入的 SVRContext.auth_context
+# 并行同源，嵌入平台时取到同一登录用户 → 零回归；独立 server 无认证时回退空串＝现行为）。
+
+[dependencies]
+# 报表域内库（跨 workspace 同库）
+cmx-rpt-model = { workspace = true }
+cmx-rpt-store-pg = { workspace = true }
+cmx-rpt-formula = { workspace = true }
+# API 通用信封（ApiResp/Result/Error；store 已返回 cmx_api_types::Result，零转换）
+cmx-api-types = { workspace = true }
+# 当前办理人身份（apply_ops）：auth::context_scope task_local（infra，跨 ws path 进 cmx-container）
+cmx-traits = { workspace = true }
+
+# Web 框架（handler 提取器 + Router；信封借 cmx-api-types 不借 cmx-api）
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }

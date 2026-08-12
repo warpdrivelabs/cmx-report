@@ -1,0 +1,43 @@
+[package]
+name = "cmx-rpt-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+# cmx-rpt 独立报表平台微服务 **HTTP 服务器**（对标 cmx-flow-server）。
+#
+# 采用通用骨架 cmx-web-chassis（与 flow-server / mdm-server 同一套启动/日志/中间件/优雅关闭/
+# banner），只提供报表相关 API。main 只填一个 ServiceSpec：report_routes 路由 + 大盘 + 数据源注册钩子
+# + 报表专属 banner/配色，交 chassis::run 统一装配。零 cmx-api / 零平台依赖。
+
+[[bin]]
+name = "cmx-rpt-server"
+path = "src/main.rs"
+
+[dependencies]
+# 平台中立核（全部 handler + report_routes::<S>() + 监控大盘）
+cmx-rpt-app = { workspace = true }
+# 报表数据源 id 常量 RPT_DB_ID（数据源注册钩子对齐，否则 store 全局查询找不到源）
+cmx-rpt-model = { workspace = true }
+# 通用 HTTP 服务骨架（配置/日志/中间件/优雅关闭/banner + ServiceSpec/run）
+cmx-web-chassis = { workspace = true }
+# 通用技术监控（observe 遥测中间件 + 拓扑声明；技术页 /_mon 由 chassis 自动挂）
+cmx-web-monitor = { workspace = true }
+# tokio-postgres DB 层（注册数据源 DbConfig/DbType）
+cmx-database-pg = { workspace = true }
+# 基础服务库：pg 数据源注册原语 + 统一 ConfigManager 装配（与 portal/flow 同一配置制度）
+cmx-service-base = { workspace = true, features = ["config-manager"] }
+
+# Web 框架（Router 类型；服务栈由 chassis 提供）
+axum = { workspace = true }
+# 异步运行时（#[tokio::main]）
+tokio = { workspace = true }
+# 自动读取 .env（统一启动契约：与门户/flow 一致，bin 自读 .env，无需手动 source）
+dotenvy = { workspace = true }
+# 启动钩子错误通道
+anyhow = { workspace = true }
+# 日志（钩子内 tracing::info）
+tracing = { workspace = true }
+# 数据源 toml 配置段解析（[datasource] → set_var 注入 RPT_PG_URL）
+toml = { workspace = true }
+serde = { workspace = true }

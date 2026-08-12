@@ -1,0 +1,85 @@
+# cmx-report —— 独立报表平台微服务 workspace（从 cmx-container 抽出，对标 cmx-flowengine / cmx-portalservice）。
+#
+# 目标：cmx-container 里不再有可执行 server bin，只剩公用库 crate。门户/流程/报表/主数据都是
+# 「代码极少、跨 workspace 复用公用库」的独立应用。本 workspace 承载报表微服务。
+#
+# 「一芯多壳」（对标 flow）：
+# - **中立核** cmx-rpt-app（新建）：全部 axum handler + 路由表 report_routes::<S>() + 监控大盘。
+#   信封直用 cmx-api-types（report store 本就返回 cmx_api_types::Result，零转换）。不依赖 cmx-api。
+# - **平台壳** cmx-rpt-api（留 cmx-container，keep-wired）：ReportModule::routes() 调
+#   report_routes::<CmxAppState>()，由 web-server 合并；经跨 ws path 反向引用本库的 cmx-rpt-app。
+# - **独立壳** cmx-rpt-server（本 workspace）：chassis bin，merge report_routes::<()>() + 大盘 + 数据源钩子。
+# - 域内库 cmx-rpt-model/formula/store-pg（P0 从 container 物理迁入，零改）。
+#
+# 依赖策略（同 cmx-flowengine）：域内 rpt crate 纯 path；基础设施（cmx-database-pg/cmx-core/…）以
+# 跨 workspace path 复用 cmx-container 成员 crate（它们仍属 cmx-container workspace，对其根解析
+# workspace=true 与 [patch.nora]，故本库无需 nora 私仓、无需把 infra 纳入 members）；外部 crate 走
+# aliyun 镜像（见 .cargo/config.toml），版本与 cmx-container 根对齐以便 Cargo 合一。因此**构建本仓需
+# ../cmx-container/ 并排存在**。
+[workspace]
+resolver = "2"
+members = [
+    "crates/cmx-rpt-model",
+    "crates/cmx-rpt-formula",
+    "crates/cmx-rpt-store-pg",
+    "crates/cmx-rpt-app",
+    "crates/cmx-rpt-server",
+]
+
+[workspace.package]
+# 与 cmx-container 对齐（迁走的 crate 用 version.workspace/edition.workspace/authors.workspace）
+version = "0.1.12"
+edition = "2024"
+authors = ["skylake@pansoft.com"]
+
+[workspace.dependencies]
+# —— 域内报表 crate（纯 path，不经私仓）——
+cmx-rpt-model = { path = "crates/cmx-rpt-model", version = "0.1.12" }
+cmx-rpt-formula = { path = "crates/cmx-rpt-formula", version = "0.1.12" }
+cmx-rpt-store-pg = { path = "crates/cmx-rpt-store-pg", version = "0.1.12" }
+cmx-rpt-app = { path = "crates/cmx-rpt-app", version = "0.1.12" }
+
+# —— 复用 cmx-container 基础设施（跨 workspace 路径；仍是 cmx-container 成员，非本库成员）——
+# tokio-postgres 并行 DB 层（多数据源池 / register_datasource / query_sql / 事务门面 + ZmcRowSource 零拷贝）
+cmx-database-pg = { path = "../cmx-container/crates/libs/cmx-infra/cmx-database-pg", version = "0.1.12" }
+# 核心库（DataValue：强类型 SQL 绑定 / AuthContext）
+cmx-core = { path = "../cmx-container/crates/libs/cmx-core", version = "0.1.12" }
+# 工具（next_pk_id：主键铸号）
+cmx-utils = { path = "../cmx-container/crates/libs/cmx-utils", version = "0.1.12" }
+# 业务错误（BizError → cmx_api_types::Error 桥接）
+cmx-biz = { path = "../cmx-container/crates/libs/cmx-biz", version = "0.1.12" }
+# API 通用类型（Error/Result/ApiResp 信封——report store + app 共用，与平台字节对齐）
+# 注：cmx-api 拆分重构后（cmx-api-core-split）本 crate 从 crates/libs/ 移入 crates/libs/cmx-apis/。
+cmx-api-types = { path = "../cmx-container/crates/libs/cmx-apis/cmx-api-types", version = "0.1.12" }
+# 异步任务中心内核（RptComputeJob/RptVerifyJob 实现 JobHandler + inventory 注册；语义中立无 cmx-api）
+cmx-job-core = { path = "../cmx-container/crates/libs/cmx-job/cmx-job-core", version = "0.1.12" }
+# 特征定义（auth::context_scope：apply_ops 取当前办理人身份，task_local 与平台并行同源）
+cmx-traits = { path = "../cmx-container/crates/libs/cmx-traits", version = "0.1.12" }
+# 通用 HTTP 服务骨架（chassis）：flow/report/mdm-server 共用的启动/日志/中间件/优雅关闭骨架
+cmx-web-chassis = { path = "../cmx-container/crates/libs/cmx-web-chassis", version = "0.1.12" }
+# 通用技术监控：请求遥测 + 系统指标（CPU/内存/网络/磁盘）+ DB 连接池；与 chassis 并列组装
+cmx-web-monitor = { path = "../cmx-container/crates/libs/cmx-web-monitor", version = "0.1.12" }
+# 基础服务库：pg 数据源注册原语 + 统一 ConfigManager 装配（config-manager feature：与 portal/flow 同一配置制度）
+cmx-service-base = { path = "../cmx-container/crates/libs/cmx-service-base", version = "0.1.12", default-features = false }
+
+# —— 外部 crate（版本照抄 cmx-container 根 [workspace.dependencies]）——
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+toml = "0.8"
+thiserror = "2.0"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+anyhow = "1.0"
+async-trait = "0.1"
+inventory = "0.3"
+rust_decimal = "1"
+base64 = "0.22"
+sha2 = "0.10"
+tokio = { version = "1.41", features = ["full"] }
+axum = { version = "0.8.9", features = ["macros", "multipart"] }
+# 自动读取 .env（与门户 cmx-platform-app / flow 一致：统一启动契约，bin 自读 .env 无需手动 source）
+dotenvy = "0.15"
+
+[profile.release]
+opt-level = 3
+lto = "thin"

@@ -1,0 +1,25 @@
+[package]
+name = "cmx-rpt-formula"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+# 报表函数系统的语义中立引擎：词法/语法/AST/求值/函数注册/依赖解析（REF 递归 + 三色环检测）。
+# 不依赖数据库/HTTP：取数经 DataProvider trait 解耦（store-pg 提供实现），可独立单测。
+
+# 编译期函数注册（QM/QC/… 一处 submit，启动/请求期 iter 枚举）
+inventory = { workspace = true }
+# 十进制金额（与 cr_cell_data.num_value 对齐，避免 f64 精度漂移）
+rust_decimal = { workspace = true }
+# 异步取数 trait（DataProvider.batch_balance）
+async-trait = { workspace = true }
+# 目录/元数据序列化（GET /functions 输出、WizardSpec）
+serde = { workspace = true }
+serde_json = { workspace = true }
+# 日志
+tracing = { workspace = true }
+
+[dev-dependencies]
+# 异步测试运行时（compute_report 是 async）
+tokio = { workspace = true }

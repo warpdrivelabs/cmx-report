@@ -1,0 +1,15 @@
+[package]
+name = "cmx-rpt-model"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+# 报表模块的语义中立层：报表工作台/设计器/应用器共享的常量（数据源 id、默认区域）与
+# 请求 DTO（列表/详情/建版本/版式查询）。既被 cmx-rpt-api 当 axum 提取器，又被
+# cmx-rpt-store-pg 当查询构建输入，故独立成层。不依赖任何数据库/HTTP 框架。
+
+[dependencies]
+# 序列化框架（DTO 反序列化）
+serde = { workspace = true }
+# JSON（DTO 里的 Value 兜底）
+serde_json = { workspace = true }

@@ -1,0 +1,18 @@
+# cmx-rpt-server 实际配置（独立报表平台微服务模式）。
+#
+# 加载顺序：本文件（路径由 CONFIG_FILE 指定，回退 RPT_CONFIG，或默认 ./report-server.toml）→ 环境变量覆盖。
+# 环境变量优先级最高（同名 RPT_* 环境变量若已设置，覆盖本文件对应值）。
+#
+# 数据源段（[datasource]）由 report-server main.rs 的 apply_toml_env() 读出并注入 RPT_PG_URL 环境变量。
+
+# —— chassis 框架级 ——
+host = "0.0.0.0"
+port = 8092
+log_dir = "logs"
+log_level = "info"
+graceful_timeout_secs = 10
+
+# —— 数据源（→ RPT_PG_URL）——
+# 报表数据字典物理表 cr_*（版式/单元格/浮动/来源绑定）全在 fico-db；db_id 固定 = RPT_DB_ID = "fico-db"。
+[datasource]
+rpt_pg_url = "postgres://postgres:postgres@127.0.0.1:5432/fico"
