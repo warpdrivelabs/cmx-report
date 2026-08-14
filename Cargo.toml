@@ -75,6 +75,8 @@ inventory = "0.3"
 rust_decimal = "1"
 base64 = "0.22"
 sha2 = "0.10"
+# 非加密内容哈希（native page rev = xxhash64 截断 16 hex，字节对齐门户 cmx-jsonstore::content_rev）
+xxhash-rust = { version = "0.8", features = ["xxh64"] }
 tokio = { version = "1.41", features = ["full"] }
 axum = { version = "0.8.9", features = ["macros", "multipart"] }
 # 自动读取 .env（与门户 cmx-platform-app / flow 一致：统一启动契约，bin 自读 .env 无需手动 source）

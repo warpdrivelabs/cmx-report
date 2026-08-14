@@ -34,3 +34,5 @@ axum = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+# native page rev 内容哈希（xxhash64→16hex，字节对齐门户 cmx-jsonstore::content_rev）
+xxhash-rust = { workspace = true }

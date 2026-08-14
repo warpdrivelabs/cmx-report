@@ -1,0 +1,33 @@
+{
+  "version": "2026.08.12",
+  "pages": [
+    {
+      "id": "portal.rpt.design-workbench",
+      "name": "报表设计工作台",
+      "details": "native_pages 三栏报表设计工作台：explorer 报表类别、content 按 cr_period_type 分期间 tab 的报表列表、property 报表详情；全部数据来自 fico-db 数据库。",
+      "sourceType": "js",
+      "relPath": "rpt/designer-workbench.js"
+    },
+    {
+      "id": "portal.rpt.designer",
+      "name": "报表设计器",
+      "details": "native_pages 多实例三区报表设计器：explorer 数据元素/多维模型，content SpreadJS 电子表格设计区，property 报表/单元格属性。",
+      "sourceType": "js",
+      "relPath": "rpt/designer.js"
+    },
+    {
+      "id": "portal.rpt.report-app-workbench",
+      "name": "报表应用工作台",
+      "details": "native_pages 三栏报表应用(数据)工作台：explorer 会计期间下拉(cr_acct_calendar)+合并组织树(cr_consol_org)、content 报表类别按钮行+报表列表、property 报表属性+组织机构详情；打开报表进入 portal.rpt.report-applier 并传入 org+period 上下文。",
+      "sourceType": "js",
+      "relPath": "rpt/report-app-workbench.js"
+    },
+    {
+      "id": "portal.rpt.report-applier",
+      "name": "报表应用器",
+      "details": "native_pages 多实例报表应用器：content SpreadJS 画布(取数/存数/导出) + property 报表属性/数据状态；按 org+period 装载存储 cr_cell_data。与设计器互不影响。",
+      "sourceType": "js",
+      "relPath": "rpt/report-applier.js"
+    }
+  ]
+}

@@ -112,6 +112,9 @@ async fn main() -> cmx_web_chassis::Result<()> {
     // chassis 默认把 router nest 到 /api 下；这里改用 nest_api(false) 自己 nest，好让根大盘 `/` 逃出 /api。
     let api_router = report_routes::<()>()
         .route("/rpt/stats", get(dashboard::rpt_stats))
+        // F2：报表微服务自持前端页只读投递（native + html），字节对齐门户信封，
+        // 供门户 F3 反代 report 拥有的页面取页请求；独立运行时也能自投递自己的界面。
+        .merge(cmx_rpt_app::native_pages::frontend_pages_routes::<()>())
         // 可观测中间件：采集每请求 method/path/协议/状态/耗时，喂 /_mon 请求遥测面板。
         .layer(axum::middleware::from_fn(cmx_web_monitor::observe));
     let app_router = Router::new()

@@ -1,0 +1,334 @@
+{
+  "owner": {
+    "domain": "fi",
+    "application": "cmxfico",
+    "module": "report"
+  },
+  "service": "cmx-report",
+  "version": "2026.08.12",
+  "note": "报表微服务自持的前端资源清单（F0 契约 / F1 源码归位）。pages=归本仓 web/ui-native 的 native 页；menu=引用这些页的四区 workspace-node 菜单节点。此文件为静态制品，尚未被门户消费（F3 联邦时门户聚合器实时拉取）。",
+  "pages": [
+    {
+      "id": "portal.rpt.design-workbench",
+      "name": "报表设计工作台",
+      "details": "native_pages 三栏报表设计工作台：explorer 报表类别、content 按 cr_period_type 分期间 tab 的报表列表、property 报表详情；全部数据来自 fico-db 数据库。",
+      "sourceType": "js",
+      "relPath": "portal/rpt/designer-workbench.js",
+      "uiPath": "rpt/designer-workbench.js"
+    },
+    {
+      "id": "portal.rpt.designer",
+      "name": "报表设计器",
+      "details": "native_pages 多实例三区报表设计器：explorer 数据元素/多维模型，content SpreadJS 电子表格设计区，property 报表/单元格属性。",
+      "sourceType": "js",
+      "relPath": "portal/rpt/designer.js",
+      "uiPath": "rpt/designer.js"
+    },
+    {
+      "id": "portal.rpt.report-app-workbench",
+      "name": "报表应用工作台",
+      "details": "native_pages 三栏报表应用(数据)工作台：explorer 会计期间下拉(cr_acct_calendar)+合并组织树(cr_consol_org)、content 报表类别按钮行+报表列表、property 报表属性+组织机构详情；打开报表进入 portal.rpt.report-applier 并传入 org+period 上下文。",
+      "sourceType": "js",
+      "relPath": "portal/rpt/report-app-workbench.js",
+      "uiPath": "rpt/report-app-workbench.js"
+    },
+    {
+      "id": "portal.rpt.report-applier",
+      "name": "报表应用器",
+      "details": "native_pages 多实例报表应用器：content SpreadJS 画布(取数/存数/导出) + property 报表属性/数据状态；按 org+period 装载存储 cr_cell_data。与设计器互不影响。",
+      "sourceType": "js",
+      "relPath": "portal/rpt/report-applier.js",
+      "uiPath": "rpt/report-applier.js"
+    }
+  ],
+  "menu": [
+    {
+      "code": "7484975236341829662",
+      "name": "fi-gl-rpt-design-workbench",
+      "owner": {
+        "domain": "fi",
+        "application": "cmxfico",
+        "module": "gl"
+      },
+      "definition": {
+        "caption": "报表设计工作台",
+        "workspace": {
+          "id": "rpt_design_workbench",
+          "model": {
+            "type": "native_pages",
+            "native_page": "portal.rpt.design-workbench",
+            "id": "rpt-design-workbench-model",
+            "view": "content",
+            "props": {
+              "mode": "model"
+            }
+          },
+          "explorer": {
+            "caption": "报表类别",
+            "icon": "folder",
+            "views": [
+              {
+                "id": "rpt-design-workbench-explorer",
+                "tabLabel": "类别",
+                "icon": "folder",
+                "type": "native_pages",
+                "native_page": "portal.rpt.design-workbench",
+                "view": "explorer"
+              }
+            ]
+          },
+          "content": {
+            "caption": "报表设计工作台",
+            "icon": "table-chart",
+            "views": [
+              {
+                "id": "rpt-design-workbench-content",
+                "tabLabel": "报表",
+                "icon": "table-chart",
+                "type": "native_pages",
+                "native_page": "portal.rpt.design-workbench",
+                "view": "content"
+              }
+            ]
+          },
+          "property": {
+            "caption": "报表属性",
+            "icon": "detail-view",
+            "views": [
+              {
+                "id": "rpt-design-workbench-prop",
+                "tabLabel": "属性",
+                "icon": "detail-view",
+                "type": "native_pages",
+                "native_page": "portal.rpt.design-workbench",
+                "view": "property"
+              }
+            ]
+          }
+        },
+        "type": "workspace-node",
+        "name": "rpt-design-workbench"
+      }
+    },
+    {
+      "code": "7484975236341829664",
+      "name": "fi-gl-rpt-app-workbench",
+      "owner": {
+        "domain": "fi",
+        "application": "cmxfico",
+        "module": "gl"
+      },
+      "definition": {
+        "caption": "报表应用工作台",
+        "workspace": {
+          "id": "rpt_app_workbench",
+          "model": {
+            "type": "native_pages",
+            "native_page": "portal.rpt.report-app-workbench",
+            "id": "rpt-app-workbench-model",
+            "view": "content",
+            "props": {
+              "mode": "data"
+            }
+          },
+          "explorer": {
+            "caption": "组织与期间",
+            "icon": "tree",
+            "views": [
+              {
+                "id": "rpt-app-workbench-explorer",
+                "tabLabel": "组织/期间",
+                "icon": "tree",
+                "type": "native_pages",
+                "native_page": "portal.rpt.report-app-workbench",
+                "view": "explorer"
+              }
+            ]
+          },
+          "content": {
+            "caption": "报表应用工作台",
+            "icon": "table-chart",
+            "views": [
+              {
+                "id": "rpt-app-workbench-content",
+                "tabLabel": "报表",
+                "icon": "table-chart",
+                "type": "native_pages",
+                "native_page": "portal.rpt.report-app-workbench",
+                "view": "content"
+              }
+            ]
+          },
+          "property": {
+            "caption": "属性",
+            "icon": "detail-view",
+            "views": [
+              {
+                "id": "rpt-app-workbench-prop",
+                "tabLabel": "报表属性",
+                "icon": "detail-view",
+                "type": "native_pages",
+                "native_page": "portal.rpt.report-app-workbench",
+                "view": "property"
+              },
+              {
+                "id": "rpt-app-workbench-prop-org",
+                "tabLabel": "组织机构",
+                "icon": "tree",
+                "type": "native_pages",
+                "native_page": "portal.rpt.report-app-workbench",
+                "view": "propertyOrg"
+              }
+            ]
+          }
+        },
+        "type": "workspace-node",
+        "name": "rpt-app-workbench"
+      }
+    },
+    {
+      "code": "7484975236346023965",
+      "name": "fi-gl-rpt-design-workbench_dup",
+      "owner": {
+        "domain": "fi",
+        "application": "cmxfico",
+        "module": "report"
+      },
+      "definition": {
+        "caption": "报表设计工作台",
+        "workspace": {
+          "id": "rpt_design_workbench",
+          "model": {
+            "type": "native_pages",
+            "native_page": "portal.rpt.design-workbench",
+            "id": "rpt-design-workbench-model",
+            "view": "content",
+            "props": {
+              "mode": "model"
+            }
+          },
+          "explorer": {
+            "caption": "报表类别",
+            "icon": "folder",
+            "views": [
+              {
+                "id": "rpt-design-workbench-explorer",
+                "tabLabel": "类别",
+                "icon": "folder",
+                "type": "native_pages",
+                "native_page": "portal.rpt.design-workbench",
+                "view": "explorer"
+              }
+            ]
+          },
+          "content": {
+            "caption": "报表设计工作台",
+            "icon": "table-chart",
+            "views": [
+              {
+                "id": "rpt-design-workbench-content",
+                "tabLabel": "报表",
+                "icon": "table-chart",
+                "type": "native_pages",
+                "native_page": "portal.rpt.design-workbench",
+                "view": "content"
+              }
+            ]
+          },
+          "property": {
+            "caption": "报表属性",
+            "icon": "detail-view",
+            "views": [
+              {
+                "id": "rpt-design-workbench-prop",
+                "tabLabel": "属性",
+                "icon": "detail-view",
+                "type": "native_pages",
+                "native_page": "portal.rpt.design-workbench",
+                "view": "property"
+              }
+            ]
+          }
+        },
+        "type": "workspace-node",
+        "name": "rpt-design-workbench"
+      }
+    },
+    {
+      "code": "7484975236346023966",
+      "name": "fi-gl-rpt-app-workbench_dup",
+      "owner": {
+        "domain": "fi",
+        "application": "cmxfico",
+        "module": "report"
+      },
+      "definition": {
+        "caption": "报表应用工作台",
+        "workspace": {
+          "id": "rpt_app_workbench",
+          "model": {
+            "type": "native_pages",
+            "native_page": "portal.rpt.report-app-workbench",
+            "id": "rpt-app-workbench-model",
+            "view": "content",
+            "props": {
+              "mode": "data"
+            }
+          },
+          "explorer": {
+            "caption": "组织与期间",
+            "icon": "tree",
+            "views": [
+              {
+                "id": "rpt-app-workbench-explorer",
+                "tabLabel": "组织/期间",
+                "icon": "tree",
+                "type": "native_pages",
+                "native_page": "portal.rpt.report-app-workbench",
+                "view": "explorer"
+              }
+            ]
+          },
+          "content": {
+            "caption": "报表应用工作台",
+            "icon": "table-chart",
+            "views": [
+              {
+                "id": "rpt-app-workbench-content",
+                "tabLabel": "报表",
+                "icon": "table-chart",
+                "type": "native_pages",
+                "native_page": "portal.rpt.report-app-workbench",
+                "view": "content"
+              }
+            ]
+          },
+          "property": {
+            "caption": "属性",
+            "icon": "detail-view",
+            "views": [
+              {
+                "id": "rpt-app-workbench-prop",
+                "tabLabel": "报表属性",
+                "icon": "detail-view",
+                "type": "native_pages",
+                "native_page": "portal.rpt.report-app-workbench",
+                "view": "property"
+              },
+              {
+                "id": "rpt-app-workbench-prop-org",
+                "tabLabel": "组织机构",
+                "icon": "tree",
+                "type": "native_pages",
+                "native_page": "portal.rpt.report-app-workbench",
+                "view": "propertyOrg"
+              }
+            ]
+          }
+        },
+        "type": "workspace-node",
+        "name": "rpt-app-workbench"
+      }
+    }
+  ]
+}
