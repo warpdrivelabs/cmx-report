@@ -1205,6 +1205,66 @@
           }
         },
         {
+          "id": "report-fi-gl-consol-workbench",
+          "name": "consol-workbench",
+          "caption": "合并报表工作台",
+          "type": "workspace-node",
+          "permissionId": null,
+          "icon": "combine",
+          "workspace": {
+            "id": "consol_workbench",
+            "model": {
+              "type": "native_pages",
+              "native_page": "portal.consol.workbench",
+              "id": "consol-workbench-model",
+              "view": "content",
+              "props": {}
+            },
+            "explorer": {
+              "caption": "方案与范围",
+              "icon": "org-chart",
+              "views": [
+                {
+                  "id": "consol-workbench-explorer",
+                  "tabLabel": "方案/期间/范围",
+                  "icon": "org-chart",
+                  "type": "native_pages",
+                  "native_page": "portal.consol.workbench",
+                  "view": "explorer"
+                }
+              ]
+            },
+            "content": {
+              "caption": "合并报表工作台",
+              "icon": "combine",
+              "views": [
+                {
+                  "id": "consol-workbench-content",
+                  "tabLabel": "合并工作台",
+                  "icon": "table-chart",
+                  "type": "native_pages",
+                  "native_page": "portal.consol.workbench",
+                  "view": "content"
+                }
+              ]
+            },
+            "property": {
+              "caption": "属性",
+              "icon": "detail-view",
+              "views": [
+                {
+                  "id": "consol-workbench-prop",
+                  "tabLabel": "节点属性",
+                  "icon": "detail-view",
+                  "type": "native_pages",
+                  "native_page": "portal.consol.workbench",
+                  "view": "property"
+                }
+              ]
+            }
+          }
+        },
+        {
           "id": "report-fi-gl-dict-ws",
           "name": "dict-ws",
           "caption": "合并组织机构维护",

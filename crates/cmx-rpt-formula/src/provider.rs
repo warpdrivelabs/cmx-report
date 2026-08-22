@@ -25,6 +25,12 @@ pub enum FetchKind {
     CreditAmount,
     /// 净发生额（借-贷）。
     NetAmount,
+    /// 合并数(CG):cg_consol_data.consolidated。org=合并节点,object=集团科目。
+    Consolidated,
+    /// 个别合计(IND):cg_consol_data.individual(未抵销)。
+    Individual,
+    /// 抵销额(ELIM):cg_consol_data.elim。
+    Elimination,
 }
 
 /// 一次取数的完整查询键（pass1 收集、批量去重、pass2 命中）。

@@ -1,0 +1,16 @@
+[package]
+name = "cmx-consol-store-pg"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+cmx-consol-model = { workspace = true }
+cmx-database-pg = { workspace = true }
+cmx-core = { workspace = true }
+cmx-utils = { workspace = true }
+cmx-biz = { workspace = true }
+cmx-api-types = { workspace = true }
+rust_decimal = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }

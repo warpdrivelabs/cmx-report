@@ -187,8 +187,12 @@ async fn load_org_parent() -> Result<HashMap<String, String>> {
     Ok(out)
 }
 
-/// PG 取数实现：REF 他表经 load_snapshot 懒装载（真跨表递归）；QM/QC/FS/JE 占位（P4 接 GL）。
-struct PgProvider;
+/// PG 取数实现：REF 他表经 load_snapshot 懒装载（真跨表递归）；QM/QC/FS/JE 占位（P4 接 GL）；
+/// CG/IND/ELIM 读合并结果 cg_consol_data(scheme 由计算请求携带)。
+struct PgProvider {
+    /// 合并方案(供 CG/IND/ELIM 定位 cg_consol_data;非合并报表可空)。
+    scheme: String,
+}
 
 #[async_trait]
 impl DataProvider for PgProvider {
@@ -196,11 +200,64 @@ impl DataProvider for PgProvider {
         &self,
         keys: &[BalanceKey],
     ) -> std::result::Result<HashMap<BalanceKey, Decimal>, String> {
-        // 占位（方案 §7 DataProvider 先占位）：按对象码派生一个稳定演示值，
-        // 让计算态整链路（装载→算→落库→取数）可端到端验证；P4 换 cv_gl_balance 真源。
+        use cmx_rpt_formula::FetchKind::*;
         let mut out = HashMap::new();
+
+        // 合并取数键(CG/IND/ELIM):从 cg_consol_data 读。按 period 分组批量查。
+        let consol_keys: Vec<&BalanceKey> = keys
+            .iter()
+            .filter(|k| matches!(k.kind, Consolidated | Individual | Elimination))
+            .collect();
+        if !consol_keys.is_empty() && !self.scheme.is_empty() {
+            let mut periods: std::collections::HashSet<String> = std::collections::HashSet::new();
+            for k in &consol_keys {
+                periods.insert(k.period.clone());
+            }
+            // (period,node,account) → (individual, elim, consolidated)
+            let mut map: HashMap<(String, String, String), (Decimal, Decimal, Decimal)> = HashMap::new();
+            for period in &periods {
+                let rows = crate::query_rows(
+                    "SELECT node_code, account_code, individual, elim, consolidated \
+                     FROM cg_consol_data WHERE scheme_code=$1 AND period_code=$2",
+                    vec![
+                        cmx_core::model::cell::DataValue::String(self.scheme.clone()),
+                        cmx_core::model::cell::DataValue::String(period.clone()),
+                    ],
+                    "consol_fetch",
+                )
+                .await
+                .map_err(|e| format!("{e}"))?;
+                for r in &rows {
+                    let node = r.get("node_code").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let acc = r.get("account_code").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let dec = |k: &str| -> Decimal {
+                        match r.get(k) {
+                            Some(Value::String(s)) => s.parse().unwrap_or(Decimal::ZERO),
+                            Some(Value::Number(n)) => n.as_f64().and_then(Decimal::from_f64_retain).unwrap_or(Decimal::ZERO),
+                            _ => Decimal::ZERO,
+                        }
+                    };
+                    map.insert((period.clone(), node, acc), (dec("individual"), dec("elim"), dec("consolidated")));
+                }
+            }
+            for k in &consol_keys {
+                let v = map
+                    .get(&(k.period.clone(), k.org.clone(), k.object.clone()))
+                    .map(|(ind, elm, con)| match k.kind {
+                        Individual => *ind,
+                        Elimination => *elm,
+                        _ => *con,
+                    })
+                    .unwrap_or(Decimal::ZERO);
+                out.insert((*k).clone(), v);
+            }
+        }
+
+        // 其余(QM/QC/FS/JE):占位(P4 接 GL 真源)。
         for k in keys {
-            out.insert(k.clone(), placeholder_balance(k));
+            if !out.contains_key(k) {
+                out.insert(k.clone(), placeholder_balance(k));
+            }
         }
         Ok(out)
     }
@@ -221,6 +278,7 @@ impl DataProvider for PgProvider {
 }
 
 /// 占位取数值：对象码尾部数字 + 种类偏移，稳定可复现（非随机，便于断言/演示）。
+/// 合并取数(CG/IND/ELIM)不走此路(由 cg_consol_data 提供),这里返回 0 兜底。
 fn placeholder_balance(k: &BalanceKey) -> Decimal {
     use cmx_rpt_formula::FetchKind::*;
     let digits: i64 = k
@@ -237,6 +295,7 @@ fn placeholder_balance(k: &BalanceKey) -> Decimal {
         DebitAmount => 10,
         CreditAmount => 20,
         NetAmount => 30,
+        Consolidated | Individual | Elimination => return Decimal::ZERO,
     };
     Decimal::from(base + bump)
 }
@@ -265,8 +324,9 @@ pub async fn compute_report_service(code: &str, body: &Value) -> Result<Value> {
     let periods = load_periods().await?;
     let org_parent = load_org_parent().await?;
 
-    // 3) 递归求值（两遍法取数 + REF 跨表 + 三色环检测）
-    let outcome: ComputeOutcome = compute_report(snapshot, &PgProvider, periods, org_parent).await;
+    // 3) 递归求值（两遍法取数 + REF 跨表 + 三色环检测）。scheme 供 CG/IND/ELIM 读 cg_consol_data。
+    let scheme = jstr(body, "schemeCode").unwrap_or_default();
+    let outcome: ComputeOutcome = compute_report(snapshot, &PgProvider { scheme }, periods, org_parent).await;
 
     // 4) 落库：事务内 UPSERT 算好的格
     persist_outcome(code, &version, &org, &period, &outcome, &coords).await?;

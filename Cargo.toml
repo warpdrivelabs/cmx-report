@@ -24,6 +24,8 @@ members = [
     "crates/cmx-rpt-store-pg",
     "crates/cmx-rpt-app",
     "crates/cmx-rpt-server",
+    "crates/cmx-consol-model",
+    "crates/cmx-consol-store-pg",
 ]
 
 [workspace.package]
@@ -38,6 +40,8 @@ cmx-rpt-model = { path = "crates/cmx-rpt-model", version = "0.1.12" }
 cmx-rpt-formula = { path = "crates/cmx-rpt-formula", version = "0.1.12" }
 cmx-rpt-store-pg = { path = "crates/cmx-rpt-store-pg", version = "0.1.12" }
 cmx-rpt-app = { path = "crates/cmx-rpt-app", version = "0.1.12" }
+cmx-consol-model = { path = "crates/cmx-consol-model", version = "0.1.12" }
+cmx-consol-store-pg = { path = "crates/cmx-consol-store-pg", version = "0.1.12" }
 
 # —— 复用 cmx-container 基础设施（跨 workspace 路径；仍是 cmx-container 成员，非本库成员）——
 # tokio-postgres 并行 DB 层（多数据源池 / register_datasource / query_sql / 事务门面 + ZmcRowSource 零拷贝）

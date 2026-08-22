@@ -28,6 +28,13 @@
       "details": "native_pages 多实例报表应用器：content SpreadJS 画布(取数/存数/导出) + property 报表属性/数据状态；按 org+period 装载存储 cr_cell_data。与设计器互不影响。",
       "sourceType": "js",
       "relPath": "rpt/report-applier.js"
+    },
+    {
+      "id": "portal.consol.workbench",
+      "name": "合并报表工作台",
+      "details": "native_pages 四区集团合并工作台：explorer 合并方案/期间/范围节点树+运行合并/对账、content 工作底稿(个别|调整|抵销|合并)+内部往来对账+合并分类账三 tab、property 节点属性+借贷平衡校验；数据源 /api/consol/*。",
+      "sourceType": "js",
+      "relPath": "rpt/consol-workbench.js"
     }
   ]
 }

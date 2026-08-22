@@ -17,6 +17,9 @@ use axum::Router;
 use axum::routing::{get, post};
 
 /// 报表路由表（对任意 state 泛型 `S` 成立）。宿主 `merge` 或 `nest("/api", …)` 之。
+pub mod consol;
+pub use consol::consol_routes;
+
 pub fn report_routes<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,

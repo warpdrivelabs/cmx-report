@@ -98,6 +98,10 @@ pub fn derive_balance_key(name: &str, args: &[Node], scope: &Scope) -> Option<Ba
         "QM" => FetchKind::EndBalance,
         "QC" => FetchKind::BeginBalance,
         "JE" => FetchKind::NetAmount,
+        // 合并取数:CG/IND/ELIM(期间, 合并节点, 集团科目)——复用 period/org/object 参数布局。
+        "CG" => FetchKind::Consolidated,
+        "IND" => FetchKind::Individual,
+        "ELIM" => FetchKind::Elimination,
         "FS" => {
             // 第 4 参方向：debit/credit，缺省 net
             let dir = args
@@ -330,7 +334,8 @@ fn arg_nums(arg: &Node, scope: &Scope) -> Result<Vec<Decimal>, FValue> {
 fn eval_call(name: &str, args: &[Node], scope: &Scope) -> FValue {
     match name {
         // ── 取数：从 fetch 缓存命中（resolve.rs 已预取） ──
-        "QM" | "QC" | "FS" | "JE" => match derive_balance_key(name, args, scope) {
+        // ── 取数：从 fetch 缓存命中（resolve.rs 已预取）。CG/IND/ELIM 合并取数同路。 ──
+        "QM" | "QC" | "FS" | "JE" | "CG" | "IND" | "ELIM" => match derive_balance_key(name, args, scope) {
             Some(k) => scope
                 .fetches
                 .get(&k)

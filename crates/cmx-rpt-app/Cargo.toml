@@ -23,6 +23,7 @@ authors.workspace = true
 # 报表域内库（跨 workspace 同库）
 cmx-rpt-model = { workspace = true }
 cmx-rpt-store-pg = { workspace = true }
+cmx-consol-store-pg = { workspace = true }
 cmx-rpt-formula = { workspace = true }
 # API 通用信封（ApiResp/Result/Error；store 已返回 cmx_api_types::Result，零转换）
 cmx-api-types = { workspace = true }

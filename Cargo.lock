@@ -690,6 +690,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmx-consol-model"
+version = "0.1.12"
+dependencies = [
+ "rust_decimal",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "cmx-consol-store-pg"
+version = "0.1.12"
+dependencies = [
+ "cmx-api-types",
+ "cmx-biz",
+ "cmx-consol-model",
+ "cmx-core",
+ "cmx-database-pg",
+ "cmx-utils",
+ "rust_decimal",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "cmx-core"
 version = "0.1.12"
 dependencies = [
@@ -839,6 +863,7 @@ version = "0.1.12"
 dependencies = [
  "axum",
  "cmx-api-types",
+ "cmx-consol-store-pg",
  "cmx-rpt-formula",
  "cmx-rpt-model",
  "cmx-rpt-store-pg",

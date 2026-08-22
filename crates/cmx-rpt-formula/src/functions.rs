@@ -335,3 +335,72 @@ inventory::submit! { RegisteredRptFn { def: abs_fn } }
 inventory::submit! { RegisteredRptFn { def: min_fn } }
 inventory::submit! { RegisteredRptFn { def: max_fn } }
 inventory::submit! { RegisteredRptFn { def: flist } }
+
+// ─────────────────────── 合并取数类(CG/IND/ELIM) ───────────────────────
+
+/// 合并数:某合并节点某集团科目的合并后金额(cg_consol_data.consolidated)。
+fn cg() -> RptFunction {
+    RptFunction {
+        name: "CG",
+        category: FnCategory::Fetch,
+        ret_type: ValueType::Amount,
+        is_fetch: true,
+        prototype: Prototype {
+            params: vec![
+                p_opt("期间", ParamKind::Period, Some("0"), "0本期,或绝对期间码"),
+                p_opt("合并节点", ParamKind::Org, Some("@current"), "@current 当前节点,或合并节点码"),
+                p("集团科目", ParamKind::Object, "集团科目代码"),
+            ],
+            variadic: None,
+        },
+        help: "合并数(某合并节点某科目合并后金额)",
+        example: "CG(0,@current,'1001')",
+        wizard: WizardSpec { preview: true },
+    }
+}
+
+/// 个别合计(未抵销):cg_consol_data.individual。
+fn ind() -> RptFunction {
+    RptFunction {
+        name: "IND",
+        category: FnCategory::Fetch,
+        ret_type: ValueType::Amount,
+        is_fetch: true,
+        prototype: Prototype {
+            params: vec![
+                p_opt("期间", ParamKind::Period, Some("0"), "0本期,或绝对期间码"),
+                p_opt("合并节点", ParamKind::Org, Some("@current"), "@current 当前节点,或合并节点码"),
+                p("集团科目", ParamKind::Object, "集团科目代码"),
+            ],
+            variadic: None,
+        },
+        help: "个别合计(下级并入,未抵销)",
+        example: "IND(0,@current,'1001')",
+        wizard: WizardSpec { preview: false },
+    }
+}
+
+/// 抵销额:cg_consol_data.elim。
+fn elim() -> RptFunction {
+    RptFunction {
+        name: "ELIM",
+        category: FnCategory::Fetch,
+        ret_type: ValueType::Amount,
+        is_fetch: true,
+        prototype: Prototype {
+            params: vec![
+                p_opt("期间", ParamKind::Period, Some("0"), "0本期,或绝对期间码"),
+                p_opt("合并节点", ParamKind::Org, Some("@current"), "@current 当前节点,或合并节点码"),
+                p("集团科目", ParamKind::Object, "集团科目代码"),
+            ],
+            variadic: None,
+        },
+        help: "抵销额(该科目在该节点的抵销净额)",
+        example: "ELIM(0,@current,'1122')",
+        wizard: WizardSpec { preview: false },
+    }
+}
+
+inventory::submit! { RegisteredRptFn { def: cg } }
+inventory::submit! { RegisteredRptFn { def: ind } }
+inventory::submit! { RegisteredRptFn { def: elim } }

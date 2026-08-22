@@ -115,6 +115,8 @@ async fn main() -> cmx_web_chassis::Result<()> {
         // F2：报表微服务自持前端页只读投递（native + html），字节对齐门户信封，
         // 供门户 F3 反代 report 拥有的页面取页请求；独立运行时也能自投递自己的界面。
         .merge(cmx_rpt_app::native_pages::frontend_pages_routes::<()>())
+        // 合并报表:方案/范围/个别数/规则/往来录入 + 运行合并 + 工作底稿/合并分类账查询。
+        .merge(cmx_rpt_app::consol_routes::<()>())
         // 可观测中间件：采集每请求 method/path/协议/状态/耗时，喂 /_mon 请求遥测面板。
         .layer(axum::middleware::from_fn(cmx_web_monitor::observe));
     let app_router = Router::new()
