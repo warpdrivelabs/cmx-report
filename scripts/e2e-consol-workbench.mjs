@@ -120,7 +120,7 @@ async function main () {
     }
     check('explorer 方案下拉已填充', st.schemeOpts >= 7, `方案数=${st.schemeOpts}`)
     check('explorer 运行合并/对账按钮就位', st.runBtn && st.reconBtn)
-    check('content 四 tab(底稿/对账/分类账/范围变动)', st.tabs === 4, `tabs=${st.tabs}`)
+    check('content 六 tab(底稿/对账/分类账/范围变动/合并报表/附注)', st.tabs === 6, `tabs=${st.tabs}`)
     check('首方案自动装载工作底稿', st.wsRows > 0, `行=${st.wsRows} 方案=${st.selectedScheme}`)
 
     // 切到 GW_TEST(商誉减值)—— 断言商誉1801=15.00、减值损失6701=5.00、借贷平衡

@@ -41,6 +41,10 @@ fn sub(label: &'static str, formula: String) -> Line { Line { label, formula: So
 fn cg(acc: &str) -> String { format!("CG(0,@current,'{acc}')") }
 /// 展示口径翻正:权益/负债/收入类科目 CG 为负,展示取负号变正。
 fn cg_neg(acc: &str) -> String { format!("-CG(0,@current,'{acc}')") }
+/// CF 取数:某现金流量项目在当前合并节点当期的合并数(借方正:流入+/流出−)。
+fn cf(item: &str) -> String { format!("CF(0,@current,'{item}')") }
+/// 展示口径翻正:权益为贷方(借方正为负),权益变动表列展示取负号变正。
+fn eqc_neg(col: &str) -> String { format!("-EQC(0,@current,'{col}')") }
 
 /// 一张报表的完整定义。
 struct Statement {
@@ -86,34 +90,47 @@ fn consol_income_statement() -> Statement {
     Statement { code: "CIS", name: "合并利润表", lines }
 }
 
-/// 合并现金流量表(CCF):结构壳(经营/投资/筹资三活动),数据格待现金流量项目流水补齐。
+/// 合并现金流量表(CCF):经营/投资/筹资三活动,数据经 CF 取数(cg_cash_flow_item 聚合)真出数。
+/// 借方正口径:流入+/流出−;各活动净额 = SUM,现金净增加 = 三活动净额之和。
 fn consol_cash_flow() -> Statement {
     let lines = vec![
         lbl("一、经营活动产生的现金流量"),
-        lbl("　销售商品、提供劳务收到的现金"),
-        lbl("　购买商品、接受劳务支付的现金"),
-        lbl("　经营活动现金流量净额"),
+        amt("　销售商品、提供劳务收到的现金", cf("CF01")),
+        amt("　收到的其他与经营活动有关的现金", cf("CF02")),
+        amt("　购买商品、接受劳务支付的现金", cf("CF03")),
+        amt("　支付给职工以及为职工支付的现金", cf("CF04")),
+        amt("　支付的各项税费", cf("CF05")),
+        amt("　支付的其他与经营活动有关的现金", cf("CF06")),
+        sub("　经营活动现金流量净额", "SUM(B2:B7)".into()),
         lbl("二、投资活动产生的现金流量"),
-        lbl("　投资活动现金流量净额"),
+        amt("　收回投资收到的现金", cf("CF11")),
+        amt("　购建固定资产、无形资产支付的现金", cf("CF12")),
+        amt("　投资支付的现金", cf("CF13")),
+        sub("　投资活动现金流量净额", "SUM(B10:B12)".into()),
         lbl("三、筹资活动产生的现金流量"),
-        lbl("　筹资活动现金流量净额"),
-        lbl("四、现金及现金等价物净增加额"),
-        lbl("(待现金流量项目流水数据模型补齐后填公式)"),
+        amt("　吸收投资收到的现金", cf("CF21")),
+        amt("　取得借款收到的现金", cf("CF22")),
+        amt("　偿还债务支付的现金", cf("CF23")),
+        amt("　分配股利、利润或偿付利息支付的现金", cf("CF24")),
+        sub("　筹资活动现金流量净额", "SUM(B15:B18)".into()),
+        sub("四、现金及现金等价物净增加额", "B8+B13+B19".into()),
     ];
     Statement { code: "CCF", name: "合并现金流量表", lines }
 }
 
-/// 合并所有者权益变动表(CSE):结构壳(期初/本期变动/期末),待权益变动流水补齐。
+/// 合并所有者权益变动表(CSE):按变动列 EC 取数(cg_equity_change 聚合)真出数。
+/// 借方正下权益为负,展示列取负号翻正;期末 = 期初 + 本年增减。
 fn consol_equity_changes() -> Statement {
     let lines = vec![
-        lbl("一、上年年末余额"),
+        sub("一、上年年末余额", eqc_neg("EC01")),
         lbl("二、本年增减变动"),
-        lbl("　(一)综合收益总额"),
-        lbl("　(二)所有者投入和减少资本"),
-        lbl("　(三)利润分配"),
-        lbl("　(四)少数股东权益变动"),
-        lbl("三、本年年末余额"),
-        lbl("(待权益变动流水数据模型补齐后填公式)"),
+        amt("　(一)综合收益总额", eqc_neg("EC02")),
+        amt("　(二)所有者投入和减少资本", eqc_neg("EC03")),
+        amt("　(三)利润分配", eqc_neg("EC04")),
+        amt("　(四)少数股东权益变动", eqc_neg("EC05")),
+        amt("　(五)其他权益变动", eqc_neg("EC06")),
+        sub("　本年增减变动小计", "SUM(B3:B7)".into()),
+        sub("三、本年年末余额", "B1+B8".into()),
     ];
     Statement { code: "CSE", name: "合并所有者权益变动表", lines }
 }

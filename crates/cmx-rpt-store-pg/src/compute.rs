@@ -253,6 +253,74 @@ impl DataProvider for PgProvider {
             }
         }
 
+        // 合并四表补充取数(CF/EQC):从 cg_cash_flow_item / cg_equity_change 读**合并节点聚合行**
+        // (node_code=合并节点,由 run_cashflow/run_equity 写回)。object = 项目码/列码。按 period 批量聚合。
+        let cf_keys: Vec<&BalanceKey> = keys.iter().filter(|k| matches!(k.kind, CashFlow)).collect();
+        let eqc_keys: Vec<&BalanceKey> = keys.iter().filter(|k| matches!(k.kind, EquityChange)).collect();
+        let dec_of = |r: &Value, k: &str| -> Decimal {
+            match r.get(k) {
+                Some(Value::String(s)) => s.parse().unwrap_or(Decimal::ZERO),
+                Some(Value::Number(n)) => n.as_f64().and_then(Decimal::from_f64_retain).unwrap_or(Decimal::ZERO),
+                _ => Decimal::ZERO,
+            }
+        };
+        if !cf_keys.is_empty() && !self.scheme.is_empty() {
+            let mut periods: std::collections::HashSet<String> = std::collections::HashSet::new();
+            for k in &cf_keys { periods.insert(k.period.clone()); }
+            let mut map: HashMap<(String, String, String), Decimal> = HashMap::new();
+            for period in &periods {
+                let rows = crate::query_rows(
+                    "SELECT node_code, item_code, SUM(amount) AS amount FROM cg_cash_flow_item \
+                     WHERE scheme_code=$1 AND period_code=$2 AND COALESCE(node_code,'')<>'' AND COALESCE(status,1)=1 \
+                     GROUP BY node_code, item_code",
+                    vec![
+                        cmx_core::model::cell::DataValue::String(self.scheme.clone()),
+                        cmx_core::model::cell::DataValue::String(period.clone()),
+                    ],
+                    "consol_cashflow_fetch",
+                )
+                .await
+                .map_err(|e| format!("{e}"))?;
+                for r in &rows {
+                    let node = r.get("node_code").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let item = r.get("item_code").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    map.insert((period.clone(), node, item), dec_of(r, "amount"));
+                }
+            }
+            for k in &cf_keys {
+                let v = map.get(&(k.period.clone(), k.org.clone(), k.object.clone())).copied().unwrap_or(Decimal::ZERO);
+                out.insert((*k).clone(), v);
+            }
+        }
+        if !eqc_keys.is_empty() && !self.scheme.is_empty() {
+            let mut periods: std::collections::HashSet<String> = std::collections::HashSet::new();
+            for k in &eqc_keys { periods.insert(k.period.clone()); }
+            let mut map: HashMap<(String, String, String), Decimal> = HashMap::new();
+            for period in &periods {
+                let rows = crate::query_rows(
+                    "SELECT node_code, column_code, SUM(amount) AS amount FROM cg_equity_change \
+                     WHERE scheme_code=$1 AND period_code=$2 AND COALESCE(node_code,'')<>'' AND COALESCE(column_code,'')<>'' AND COALESCE(status,1)=1 \
+                     GROUP BY node_code, column_code",
+                    vec![
+                        cmx_core::model::cell::DataValue::String(self.scheme.clone()),
+                        cmx_core::model::cell::DataValue::String(period.clone()),
+                    ],
+                    "consol_equity_fetch",
+                )
+                .await
+                .map_err(|e| format!("{e}"))?;
+                for r in &rows {
+                    let node = r.get("node_code").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let col = r.get("column_code").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    map.insert((period.clone(), node, col), dec_of(r, "amount"));
+                }
+            }
+            for k in &eqc_keys {
+                let v = map.get(&(k.period.clone(), k.org.clone(), k.object.clone())).copied().unwrap_or(Decimal::ZERO);
+                out.insert((*k).clone(), v);
+            }
+        }
+
         // 其余(QM/QC/FS/JE):占位(P4 接 GL 真源)。
         for k in keys {
             if !out.contains_key(k) {
@@ -295,7 +363,7 @@ fn placeholder_balance(k: &BalanceKey) -> Decimal {
         DebitAmount => 10,
         CreditAmount => 20,
         NetAmount => 30,
-        Consolidated | Individual | Elimination => return Decimal::ZERO,
+        Consolidated | Individual | Elimination | CashFlow | EquityChange => return Decimal::ZERO,
     };
     Decimal::from(base + bump)
 }

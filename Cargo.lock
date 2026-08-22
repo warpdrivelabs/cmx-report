@@ -730,8 +730,10 @@ dependencies = [
  "cmx-core",
  "cmx-database-pg",
  "cmx-utils",
+ "reqwest",
  "rust_decimal",
  "serde_json",
+ "tokio",
  "tracing",
 ]
 

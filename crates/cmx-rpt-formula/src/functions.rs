@@ -401,6 +401,50 @@ fn elim() -> RptFunction {
     }
 }
 
+/// 合并现金流量项目:cg_cash_flow_item.amount(合并节点聚合,借方正:流入+/流出−)。
+fn cf() -> RptFunction {
+    RptFunction {
+        name: "CF",
+        category: FnCategory::Fetch,
+        ret_type: ValueType::Amount,
+        is_fetch: true,
+        prototype: Prototype {
+            params: vec![
+                p_opt("期间", ParamKind::Period, Some("0"), "0本期,或绝对期间码"),
+                p_opt("合并节点", ParamKind::Org, Some("@current"), "@current 当前节点,或合并节点码"),
+                p("现金流量项目码", ParamKind::Object, "现金流量项目码(如CF01)"),
+            ],
+            variadic: None,
+        },
+        help: "合并现金流量项目金额(合并节点聚合,借方正:流入+/流出−)",
+        example: "CF(0,@current,'CF01')",
+        wizard: WizardSpec { preview: false },
+    }
+}
+
+/// 合并权益变动列:cg_equity_change.amount(合并节点聚合,借方正)。
+fn eqc() -> RptFunction {
+    RptFunction {
+        name: "EQC",
+        category: FnCategory::Fetch,
+        ret_type: ValueType::Amount,
+        is_fetch: true,
+        prototype: Prototype {
+            params: vec![
+                p_opt("期间", ParamKind::Period, Some("0"), "0本期,或绝对期间码"),
+                p_opt("合并节点", ParamKind::Org, Some("@current"), "@current 当前节点,或合并节点码"),
+                p("权益变动列码", ParamKind::Object, "权益变动列码(如EC01)"),
+            ],
+            variadic: None,
+        },
+        help: "合并权益变动金额(合并节点聚合,借方正)",
+        example: "EQC(0,@current,'EC01')",
+        wizard: WizardSpec { preview: false },
+    }
+}
+
 inventory::submit! { RegisteredRptFn { def: cg } }
 inventory::submit! { RegisteredRptFn { def: ind } }
 inventory::submit! { RegisteredRptFn { def: elim } }
+inventory::submit! { RegisteredRptFn { def: cf } }
+inventory::submit! { RegisteredRptFn { def: eqc } }

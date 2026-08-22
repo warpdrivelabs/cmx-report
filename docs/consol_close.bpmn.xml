@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  合并关账编排流程(consol_close)—— cmx-report 关账编排对接 cmx-flow 的样例 BPMN 定义。
+
+  用途:在 cmx-flow(独立 flow-server :8091)侧 publish 本定义后,cmx-report 的关账 start
+  (POST /api/consol/close/start,需配 FLOW_BASE_URL)会起一个本流程实例、绑定 cg_close_run 单据。
+  复核节点 review 是人工 userTask,进门户「待办中心」;办理后由业务侧回调 close/advance 推进。
+
+  ★ 编译期解耦:cmx-report 不引 cmx-flow-*,只经 HTTP 起实例;本文件仅供 flow 侧导入,不硬绑。
+  发布(示例):
+    curl -X POST http://localhost:8091/api/flow/definitions/draft -H 'X-User: u' -H 'X-Tenant: default' \
+      -H 'content-type: application/json' -d "{\"name\":\"合并关账编排\",\"bpmnXml\":\"$(cat consol_close.bpmn.xml | 转义)\"}"
+    curl -X POST http://localhost:8091/api/flow/definitions/consol_close/publish -H 'X-User: u' -H 'X-Tenant: default' -d '{}'
+-->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:flowable="http://flowable.org/bpmn" xmlns:cmx="http://cmx.io/bpmn" id="defs_consol_close" targetNamespace="http://cmx.io/flow/consol">
+  <bpmn:process id="consol_close" name="合并关账编排" isExecutable="true">
+    <bpmn:startEvent id="start" name="发起关账">
+      <bpmn:outgoing>f_start</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="collect" name="采集个别数" flowable:type="external-worker" cmx:topic="consol.collect">
+      <bpmn:incoming>f_start</bpmn:incoming>
+      <bpmn:outgoing>f_collect</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="reconcile" name="内部往来对账" flowable:type="external-worker" cmx:topic="consol.reconcile">
+      <bpmn:incoming>f_collect</bpmn:incoming>
+      <bpmn:outgoing>f_reconcile</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="consolidate" name="逐级合并" flowable:type="external-worker" cmx:topic="consol.consolidate">
+      <bpmn:incoming>f_reconcile</bpmn:incoming>
+      <bpmn:outgoing>f_consolidate</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="review" name="合并复核" flowable:assignee="u_reviewer">
+      <bpmn:incoming>f_consolidate</bpmn:incoming>
+      <bpmn:outgoing>f_review</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="statements" name="出表" flowable:type="external-worker" cmx:topic="consol.statements">
+      <bpmn:incoming>f_review</bpmn:incoming>
+      <bpmn:outgoing>f_statements</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="end" name="关账完成">
+      <bpmn:incoming>f_statements</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f_start" sourceRef="start" targetRef="collect" />
+    <bpmn:sequenceFlow id="f_collect" sourceRef="collect" targetRef="reconcile" />
+    <bpmn:sequenceFlow id="f_reconcile" sourceRef="reconcile" targetRef="consolidate" />
+    <bpmn:sequenceFlow id="f_consolidate" sourceRef="consolidate" targetRef="review" />
+    <bpmn:sequenceFlow id="f_review" sourceRef="review" targetRef="statements" />
+    <bpmn:sequenceFlow id="f_statements" sourceRef="statements" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>

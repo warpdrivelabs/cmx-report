@@ -234,7 +234,7 @@ fn collect_deps(
         }
         Node::Call(name, args) => {
             match name.as_str() {
-                "QM" | "QC" | "FS" | "JE" | "CG" | "IND" | "ELIM" => {
+                "QM" | "QC" | "FS" | "JE" | "CG" | "IND" | "ELIM" | "CF" | "EQC" => {
                     if let Some(k) = derive_balance_key(name, args, scope) {
                         fetch_keys.push(k);
                     }

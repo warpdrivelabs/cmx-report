@@ -102,6 +102,9 @@ pub fn derive_balance_key(name: &str, args: &[Node], scope: &Scope) -> Option<Ba
         "CG" => FetchKind::Consolidated,
         "IND" => FetchKind::Individual,
         "ELIM" => FetchKind::Elimination,
+        // 合并四表补充取数:CF(现金流量项目)/EQC(权益变动列)——同 period/org/object 布局,object=项目/列码。
+        "CF" => FetchKind::CashFlow,
+        "EQC" => FetchKind::EquityChange,
         "FS" => {
             // 第 4 参方向：debit/credit，缺省 net
             let dir = args
@@ -335,7 +338,7 @@ fn eval_call(name: &str, args: &[Node], scope: &Scope) -> FValue {
     match name {
         // ── 取数：从 fetch 缓存命中（resolve.rs 已预取） ──
         // ── 取数：从 fetch 缓存命中（resolve.rs 已预取）。CG/IND/ELIM 合并取数同路。 ──
-        "QM" | "QC" | "FS" | "JE" | "CG" | "IND" | "ELIM" => match derive_balance_key(name, args, scope) {
+        "QM" | "QC" | "FS" | "JE" | "CG" | "IND" | "ELIM" | "CF" | "EQC" => match derive_balance_key(name, args, scope) {
             Some(k) => scope
                 .fetches
                 .get(&k)

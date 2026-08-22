@@ -31,6 +31,10 @@ pub enum FetchKind {
     Individual,
     /// 抵销额(ELIM):cg_consol_data.elim。
     Elimination,
+    /// 现金流量项目合并数(CF):cg_cash_flow_item.amount(合并节点聚合,借方正)。org=合并节点,object=现金流量项目码。
+    CashFlow,
+    /// 权益变动列合并数(EQC):cg_equity_change.amount(合并节点聚合,借方正)。org=合并节点,object=权益变动列码。
+    EquityChange,
 }
 
 /// 一次取数的完整查询键（pass1 收集、批量去重、pass2 命中）。

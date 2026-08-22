@@ -14,3 +14,6 @@ cmx-api-types = { workspace = true }
 rust_decimal = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+# 关账编排的 cmx-flow HTTP 客户端(env-gated FLOW_BASE_URL;不配则纯服务内编排)。
+reqwest = { workspace = true }
+tokio = { workspace = true }
