@@ -49,18 +49,18 @@ fn pk() -> DataValue {
 pub async fn upsert_scheme(b: &Value) -> Result<Value> {
     execute(
         "INSERT INTO cg_consol_scheme (id, code, name, scheme_code, standard, group_currency, ledger, \
-            investment_account, goodwill_account, nci_account, minority_pl_account, cta_account, sort_no, status, create_time, update_time) \
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,0,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) \
+            investment_account, goodwill_account, nci_account, minority_pl_account, cta_account, capital_reserve_account, sort_no, status, create_time, update_time) \
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,0,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) \
          ON CONFLICT (scheme_code) DO UPDATE SET name=EXCLUDED.name, standard=EXCLUDED.standard, \
             group_currency=EXCLUDED.group_currency, ledger=EXCLUDED.ledger, \
             investment_account=EXCLUDED.investment_account, goodwill_account=EXCLUDED.goodwill_account, \
             nci_account=EXCLUDED.nci_account, minority_pl_account=EXCLUDED.minority_pl_account, \
-            cta_account=EXCLUDED.cta_account, update_time=CURRENT_TIMESTAMP",
+            cta_account=EXCLUDED.cta_account, capital_reserve_account=EXCLUDED.capital_reserve_account, update_time=CURRENT_TIMESTAMP",
         vec![
             pk(), dvs_req(b, "schemeCode"), dvs(b, "name"), dvs_req(b, "schemeCode"),
             dvs(b, "standard"), dvs(b, "groupCurrency"), dvs(b, "ledger"),
             dvs(b, "investmentAccount"), dvs(b, "goodwillAccount"), dvs(b, "nciAccount"), dvs(b, "minorityPlAccount"),
-            dvs(b, "ctaAccount"),
+            dvs(b, "ctaAccount"), dvs(b, "capitalReserveAccount"),
         ],
     ).await?;
     Ok(json!({ "ok": true }))
@@ -112,16 +112,18 @@ pub async fn upsert_scope(b: &Value) -> Result<Value> {
     for (i, it) in items.iter().enumerate() {
         execute(
             "INSERT INTO cg_scope (id, code, name, scheme_code, period_code, org_code, org_name, parent_code, \
-                consol_method, ownership_pct, is_leaf, level_no, investment_amount, currency, first_time, disposal, sort_no, status, create_time, update_time) \
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) \
+                consol_method, ownership_pct, is_leaf, level_no, investment_amount, currency, first_time, disposal, under_common_control, sort_no, status, create_time, update_time) \
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) \
              ON CONFLICT (scheme_code, period_code, org_code) DO UPDATE SET org_name=EXCLUDED.org_name, parent_code=EXCLUDED.parent_code, \
                 consol_method=EXCLUDED.consol_method, ownership_pct=EXCLUDED.ownership_pct, is_leaf=EXCLUDED.is_leaf, \
-                level_no=EXCLUDED.level_no, investment_amount=EXCLUDED.investment_amount, currency=EXCLUDED.currency, update_time=CURRENT_TIMESTAMP",
+                level_no=EXCLUDED.level_no, investment_amount=EXCLUDED.investment_amount, currency=EXCLUDED.currency, \
+                under_common_control=EXCLUDED.under_common_control, update_time=CURRENT_TIMESTAMP",
             vec![
                 pk(), dvs_req(it, "orgCode"), dvs(it, "orgName"), dvs_req(it, "schemeCode"), dvs_req(it, "periodCode"),
                 dvs_req(it, "orgCode"), dvs(it, "orgName"), dvs(it, "parentCode"),
                 dvs_req(it, "consolMethod"), dvdec(it, "ownershipPct"), dvi(it, "isLeaf", 0),
                 dvi(it, "levelNo", 1), dvdec(it, "investmentAmount"), dvs(it, "currency"), dvi(it, "firstTime", 0), dvi(it, "disposal", 0),
+                dvi(it, "underCommonControl", 0),
                 dvi(it, "sortNo", i as i64),
             ],
         ).await?;
@@ -256,6 +258,107 @@ pub async fn upsert_goodwill_impair(b: &Value) -> Result<Value> {
                 DataValue::String(format!("{}|{}|{}", s(it,"schemeCode").unwrap_or_default(), s(it,"periodCode").unwrap_or_default(), s(it,"nodeCode").unwrap_or_default())),
                 dvs(it, "name"), dvs_req(it, "schemeCode"), dvs_req(it, "periodCode"),
                 dvs_req(it, "nodeCode"), dvdec(it, "amount"), dvi(it, "sortNo", i as i64),
+            ],
+        ).await?;
+    }
+    Ok(json!({ "ok": true, "saved": items.len() }))
+}
+
+/// 现金流量项目流水(批量;N2 CCF 输入,主体原始行 node_code='')。
+/// 唯一键 (scheme,period,node_code,entity_code,item_code)。录入主体行:node_code 传空串。
+pub async fn upsert_cash_flow_items(b: &Value) -> Result<Value> {
+    let items = arr(b);
+    for (i, it) in items.iter().enumerate() {
+        let node = s(it, "nodeCode").unwrap_or_default();
+        let entity = s(it, "entityCode").unwrap_or_default();
+        execute(
+            "INSERT INTO cg_cash_flow_item (id, code, name, scheme_code, period_code, node_code, entity_code, \
+                activity, item_code, item_name, inflow, outflow, amount, is_intercompany, counterparty, sort_no, status, create_time, update_time) \
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) \
+             ON CONFLICT (scheme_code, period_code, node_code, entity_code, item_code) DO UPDATE SET \
+                activity=EXCLUDED.activity, item_name=EXCLUDED.item_name, inflow=EXCLUDED.inflow, outflow=EXCLUDED.outflow, \
+                amount=EXCLUDED.amount, is_intercompany=EXCLUDED.is_intercompany, counterparty=EXCLUDED.counterparty, update_time=CURRENT_TIMESTAMP",
+            vec![
+                pk(),
+                DataValue::String(format!("{}|{}|{}|{}|{}", s(it,"schemeCode").unwrap_or_default(), s(it,"periodCode").unwrap_or_default(), node, entity, s(it,"itemCode").unwrap_or_default())),
+                dvs(it, "name"), dvs_req(it, "schemeCode"), dvs_req(it, "periodCode"),
+                DataValue::String(node), DataValue::String(entity),
+                dvs_req(it, "activity"), dvs_req(it, "itemCode"), dvs(it, "itemName"),
+                dvdec(it, "inflow"), dvdec(it, "outflow"), dvdec(it, "amount"),
+                dvi(it, "isIntercompany", 0), dvs(it, "counterparty"), dvi(it, "sortNo", i as i64),
+            ],
+        ).await?;
+    }
+    Ok(json!({ "ok": true, "saved": items.len() }))
+}
+
+/// L3 固定资产内部交易未实现利润(批量)。唯一键 (scheme,period,seller,buyer)。
+pub async fn upsert_fa_profit(b: &Value) -> Result<Value> {
+    let items = arr(b);
+    for (i, it) in items.iter().enumerate() {
+        execute(
+            "INSERT INTO cg_fa_profit (id, code, name, scheme_code, period_code, seller, buyer, unrealized, dep_years, elapsed_years, sort_no, status, create_time, update_time) \
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) \
+             ON CONFLICT (scheme_code, period_code, seller, buyer) DO UPDATE SET unrealized=EXCLUDED.unrealized, \
+                dep_years=EXCLUDED.dep_years, elapsed_years=EXCLUDED.elapsed_years, update_time=CURRENT_TIMESTAMP",
+            vec![
+                pk(),
+                DataValue::String(format!("{}|{}|{}|{}", s(it,"schemeCode").unwrap_or_default(), s(it,"periodCode").unwrap_or_default(), s(it,"seller").unwrap_or_default(), s(it,"buyer").unwrap_or_default())),
+                dvs(it, "name"), dvs_req(it, "schemeCode"), dvs_req(it, "periodCode"),
+                dvs_req(it, "seller"), dvs_req(it, "buyer"), dvdec(it, "unrealized"), dvdec(it, "depYears"), dvdec(it, "elapsedYears"),
+                dvi(it, "sortNo", i as i64),
+            ],
+        ).await?;
+    }
+    Ok(json!({ "ok": true, "saved": items.len() }))
+}
+
+/// L2 分步取得/处置交易(批量)。唯一键 (scheme,period,node_code,txn_type)。
+pub async fn upsert_step_txns(b: &Value) -> Result<Value> {
+    let items = arr(b);
+    for (i, it) in items.iter().enumerate() {
+        execute(
+            "INSERT INTO cg_step_txn (id, code, name, scheme_code, period_code, node_code, txn_type, loses_control, \
+                prev_carrying, prev_fair_value, proceeds, disposed_share, retained_fair_value, net_assets_share, sort_no, status, create_time, update_time) \
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) \
+             ON CONFLICT (scheme_code, period_code, node_code, txn_type) DO UPDATE SET loses_control=EXCLUDED.loses_control, \
+                prev_carrying=EXCLUDED.prev_carrying, prev_fair_value=EXCLUDED.prev_fair_value, proceeds=EXCLUDED.proceeds, \
+                disposed_share=EXCLUDED.disposed_share, retained_fair_value=EXCLUDED.retained_fair_value, \
+                net_assets_share=EXCLUDED.net_assets_share, update_time=CURRENT_TIMESTAMP",
+            vec![
+                pk(),
+                DataValue::String(format!("{}|{}|{}|{}", s(it,"schemeCode").unwrap_or_default(), s(it,"periodCode").unwrap_or_default(), s(it,"nodeCode").unwrap_or_default(), s(it,"txnType").unwrap_or_default())),
+                dvs(it, "name"), dvs_req(it, "schemeCode"), dvs_req(it, "periodCode"),
+                dvs_req(it, "nodeCode"), dvs_req(it, "txnType"), dvi(it, "losesControl", 0),
+                dvdec(it, "prevCarrying"), dvdec(it, "prevFairValue"), dvdec(it, "proceeds"),
+                dvdec(it, "disposedShare"), dvdec(it, "retainedFairValue"), dvdec(it, "netAssetsShare"),
+                dvi(it, "sortNo", i as i64),
+            ],
+        ).await?;
+    }
+    Ok(json!({ "ok": true, "saved": items.len() }))
+}
+
+/// 权益变动流水(批量;N2 CSE 输入,主体原始行 node_code='')。
+/// 唯一键 (scheme,period,node_code,entity_code,equity_item,change_type)。
+pub async fn upsert_equity_changes(b: &Value) -> Result<Value> {
+    let items = arr(b);
+    for (i, it) in items.iter().enumerate() {
+        let node = s(it, "nodeCode").unwrap_or_default();
+        let entity = s(it, "entityCode").unwrap_or_default();
+        execute(
+            "INSERT INTO cg_equity_change (id, code, name, scheme_code, period_code, node_code, entity_code, \
+                equity_item, change_type, column_code, amount, attributable, sort_no, status, create_time, update_time) \
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) \
+             ON CONFLICT (scheme_code, period_code, node_code, entity_code, equity_item, change_type) DO UPDATE SET \
+                column_code=EXCLUDED.column_code, amount=EXCLUDED.amount, attributable=EXCLUDED.attributable, update_time=CURRENT_TIMESTAMP",
+            vec![
+                pk(),
+                DataValue::String(format!("{}|{}|{}|{}|{}|{}", s(it,"schemeCode").unwrap_or_default(), s(it,"periodCode").unwrap_or_default(), node, entity, s(it,"equityItem").unwrap_or_default(), s(it,"changeType").unwrap_or_default())),
+                dvs(it, "name"), dvs_req(it, "schemeCode"), dvs_req(it, "periodCode"),
+                DataValue::String(node), DataValue::String(entity),
+                dvs_req(it, "equityItem"), dvs_req(it, "changeType"), dvs(it, "columnCode"),
+                dvdec(it, "amount"), dvs(it, "attributable"), dvi(it, "sortNo", i as i64),
             ],
         ).await?;
     }

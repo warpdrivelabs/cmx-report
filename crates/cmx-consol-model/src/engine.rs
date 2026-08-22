@@ -27,6 +27,8 @@ pub struct CapitalCfg {
     pub nci_account: String,
     /// 少数股东损益科目(P&L 分摊)。
     pub minority_pl_account: String,
+    /// 资本公积科目(同一控制下企业合并:差额入此,不确认商誉;缺省 4002)。
+    pub capital_reserve_account: String,
 }
 
 /// ① 个别数聚合:各下级 balances × 并入比例(Full=1/Proportional=持股/Equity·Cost=0),逐科目求和。
@@ -109,7 +111,66 @@ pub fn capital_elimination(
     }
 }
 
-/// ③ 少数股东损益(全额合并下,把子公司净利润的少数份额划归 NCI)。
+/// ②' 同一控制下企业合并的资本抵销(权益结合法 / 账面价值法,CAS 20)。
+///
+/// 与 [`capital_elimination`] 的唯一区别:**不确认商誉**——长投与享有净资产份额的差额
+/// 计入**资本公积**(不足冲减,借方正下作为权益的调整),而非作为资产商誉。
+/// 其余(消除子公司权益、消除长投、确认 NCI)完全一致。借方正下凭证自平衡。
+///
+/// 差额 = investment − p × book_equity:
+///   - 差额>0(付出对价 > 应享份额):Dr 资本公积(减少集团资本公积)。
+///   - 差额<0(付出对价 < 应享份额):Cr 资本公积(增加)。
+pub fn common_control_elimination(
+    sub_equity: &[(String, Decimal)],
+    investment: Decimal,
+    ownership: Decimal,
+    cfg: &CapitalCfg,
+    rule_code: &str,
+) -> ElimEntry {
+    let mut lines: Vec<ElimLine> = Vec::new();
+
+    let equity_dp_sum: Decimal = sub_equity.iter().map(|(_, v)| *v).sum();
+    let book_equity = -equity_dp_sum; // 自然口径净资产
+
+    // Dr 各权益科目全额(消除子公司权益)。
+    for (acc, amt) in sub_equity {
+        let need = -*amt;
+        if need >= Decimal::ZERO {
+            lines.push(ElimLine::new(acc, need, Decimal::ZERO));
+        } else {
+            lines.push(ElimLine::new(acc, Decimal::ZERO, -need));
+        }
+    }
+    // Cr 长期股权投资全额。
+    lines.push(ElimLine::new(&cfg.investment_account, Decimal::ZERO, investment));
+
+    // 少数股东权益 = (1−p) × 账面净资产。
+    let nci = (Decimal::ONE - ownership) * book_equity;
+    if nci != Decimal::ZERO {
+        if nci >= Decimal::ZERO {
+            lines.push(ElimLine::new(&cfg.nci_account, Decimal::ZERO, nci));
+        } else {
+            lines.push(ElimLine::new(&cfg.nci_account, -nci, Decimal::ZERO));
+        }
+    }
+
+    // 差额 → 资本公积(不确认商誉)。差额>0 → Dr 资本公积(权益减少);差额<0 → Cr 资本公积。
+    let diff = investment - ownership * book_equity;
+    if diff != Decimal::ZERO {
+        if diff >= Decimal::ZERO {
+            lines.push(ElimLine::new(&cfg.capital_reserve_account, diff, Decimal::ZERO));
+        } else {
+            lines.push(ElimLine::new(&cfg.capital_reserve_account, Decimal::ZERO, -diff));
+        }
+    }
+
+    ElimEntry {
+        elim_type: "capital_common_control".to_string(),
+        source_rule: rule_code.to_string(),
+        is_opening: false,
+        lines,
+    }
+}
 ///
 /// `sub_net_profit`:子公司净利润(自然口径,正=盈利)。
 /// 生成:Dr 少数股东损益(P&L 分摊) / Cr 少数股东权益。金额 = (1−p) × 净利润。
@@ -143,6 +204,96 @@ fn signed_line(account: &str, net: Decimal) -> ElimLine {
         ElimLine::new(account, net, Decimal::ZERO)
     } else {
         ElimLine::new(account, Decimal::ZERO, -net)
+    }
+}
+
+/// L2 分步取得交易的会计口径(达到控制:原持有股权按公允价值重估)。
+///
+/// 分步取得达到控制时,原已持有的股权(权益法/成本法核算)在购买日按**公允价值重估**,
+/// 原账面与公允的差额确认为**投资收益**(非同一控制下)或**资本公积**(同一控制下)。
+/// - `prev_carrying`:原持股账面价值(自然口径,正)。
+/// - `prev_fair_value`:原持股在购买日的公允价值(自然口径,正)。
+/// 生成一张平衡的调整凭证:Dr 长期股权投资(增值 = 公允 − 账面)/ Cr 投资收益(或资本公积)。
+/// 差额为负(减值)则反向。差额为 0 → None。
+pub fn step_acquisition(
+    prev_carrying: Decimal,
+    prev_fair_value: Decimal,
+    investment_account: &str,
+    gain_account: &str,
+    rule_code: &str,
+) -> Option<ElimEntry> {
+    let remeasure = prev_fair_value - prev_carrying;
+    if remeasure == Decimal::ZERO {
+        return None;
+    }
+    // Dr 长投 +remeasure(资产增);Cr 投资收益 −remeasure(收入为贷方,net −remeasure)。
+    Some(ElimEntry {
+        elim_type: "step_acquisition".to_string(),
+        source_rule: rule_code.to_string(),
+        is_opening: false,
+        lines: vec![
+            signed_line(investment_account, remeasure),
+            signed_line(gain_account, -remeasure),
+        ],
+    })
+}
+
+/// L2 处置股权的会计口径(两种情形)。
+///
+/// - **不丧失控制**(`loses_control=false`):部分处置视为**权益交易**,处置价与所处置净资产
+///   份额的差额调**资本公积**(不确认损益)。
+///   `proceeds`=处置对价,`disposed_share`=所处置的净资产份额账面(自然,正)。
+///   差额 = proceeds − disposed_share → Cr 资本公积(处置价高)/ Dr 资本公积(处置价低);
+///   对手方为 NCI 变动(处置给少数股东)→ Dr/Cr NCI。
+/// - **丧失控制**(`loses_control=true`):确认**处置损益**(处置价 + 剩余股权公允 − 原享有净资产),
+///   计入投资收益。`retained_fair_value`=剩余股权公允。
+///   损益 = proceeds + retained_fair_value − net_assets_share → Cr 投资收益(收益)。
+///
+/// 均生成一张平衡凭证(另一腿计 NCI 或货币资金对冲,这里以 NCI/资本公积 为对手保持自平衡)。
+#[allow(clippy::too_many_arguments)]
+pub fn disposal(
+    loses_control: bool,
+    proceeds: Decimal,
+    disposed_share: Decimal,
+    retained_fair_value: Decimal,
+    net_assets_share: Decimal,
+    nci_account: &str,
+    capital_reserve_account: &str,
+    gain_account: &str,
+    rule_code: &str,
+) -> Option<ElimEntry> {
+    if loses_control {
+        // 处置损益 = 处置价 + 剩余股权公允 − 原享有净资产份额。
+        let pl = proceeds + retained_fair_value - net_assets_share;
+        if pl == Decimal::ZERO {
+            return None;
+        }
+        // Cr 投资收益(收益,net −pl);对冲腿计 NCI(丧失控制,原 NCI 转出)以自平衡。
+        Some(ElimEntry {
+            elim_type: "disposal_loss_control".to_string(),
+            source_rule: rule_code.to_string(),
+            is_opening: false,
+            lines: vec![
+                signed_line(gain_account, -pl),
+                signed_line(nci_account, pl),
+            ],
+        })
+    } else {
+        // 权益交易:差额调资本公积,不确认损益。
+        let diff = proceeds - disposed_share;
+        if diff == Decimal::ZERO {
+            return None;
+        }
+        // 处置价 > 份额 → 资本公积增加(Cr);对手 NCI 增加(处置给少数股东)。
+        Some(ElimEntry {
+            elim_type: "disposal_equity_txn".to_string(),
+            source_rule: rule_code.to_string(),
+            is_opening: false,
+            lines: vec![
+                signed_line(capital_reserve_account, -diff),
+                signed_line(nci_account, diff),
+            ],
+        })
     }
 }
 
@@ -276,6 +427,45 @@ pub fn sales_elimination(
         .collect()
 }
 
+/// L4 内部股利抵销:子公司向母公司分配股利,母确认投资收益 vs 子分配利润的重复计量。
+///
+/// 母公司收到子公司分红,在个别报表确认**投资收益**;子公司分配利润减少**未分配利润**。
+/// 合并层看,分红是集团内部转移,不产生集团损益 → 抵销:
+///   Dr 投资收益(母,冲回收入,收入借方正 net +)/ Cr 未分配利润(还原子公司被分掉的留存,net −)。
+/// `IcMatch.amount` = 母公司自子公司确认的股利收益(自然口径,正);entity_a=母、entity_b=子。
+pub fn dividend_elimination(
+    matches: &[IcMatch],
+    investment_income_account: &str,
+    retained_earnings_account: &str,
+    rule_code: &str,
+) -> Vec<ElimEntry> {
+    matches
+        .iter()
+        .filter(|m| m.amount != Decimal::ZERO)
+        .map(|m| ElimEntry {
+            elim_type: "dividend".to_string(),
+            source_rule: rule_code.to_string(),
+            is_opening: false,
+            lines: vec![
+                // 投资收益(收入,贷方正):Dr 消除母确认的收益 → net += amount
+                ElimLine {
+                    account: investment_income_account.to_string(),
+                    dr: m.amount,
+                    cr: Decimal::ZERO,
+                    partner: Some(m.entity_a.clone()),
+                },
+                // 未分配利润(权益,贷方正):Cr 还原子被分配的留存 → net −= amount
+                ElimLine {
+                    account: retained_earnings_account.to_string(),
+                    dr: Decimal::ZERO,
+                    cr: m.amount,
+                    partner: Some(m.entity_b.clone()),
+                },
+            ],
+        })
+        .collect()
+}
+
 /// 一笔存货未实现内部利润(期初/期末),供 C6 抵销与期初结转。
 #[derive(Debug, Clone)]
 pub struct InventoryProfit {
@@ -349,6 +539,73 @@ pub fn inventory_profit_elimination(
                 },
             ],
         });
+    }
+    out
+}
+
+/// 一笔固定资产内部交易未实现利润(L3;含逐期折旧转回)。
+#[derive(Debug, Clone)]
+pub struct FixedAssetProfit {
+    /// 卖方(利润产生方)。
+    pub seller: String,
+    /// 买方(持有并计提折旧方)。
+    pub buyer: String,
+    /// 交易时固定资产原值中的未实现利润(自然口径,正)。
+    pub unrealized: Decimal,
+    /// 买方对该资产的折旧年限(总年限,>0)。
+    pub dep_years: Decimal,
+    /// 已使用年限(本期末累计已折旧年数;含本期)。
+    pub elapsed_years: Decimal,
+}
+
+/// L3 固定资产内部交易未实现利润抵销 + 逐期折旧转回(借方正,两张凭证)。
+///
+/// 内部销售固定资产,买方按含内部利润的价格入账并计提折旧 → 合并需:
+///   1. **抵原值利润**(当期发生,若 elapsed=0..1 视为交易期):Dr 营业外收入/资产处置损益(卖方利润)
+///      / Cr 固定资产(消除原值中的内部利润)。这里统一:Dr 处置损益科目 / Cr 固定资产。
+///   2. **折旧转回**:买方多提的折旧(按未实现利润 × 已用年限/总年限)在合并层转回:
+///      Dr 累计折旧(冲多提)/ Cr 管理费用等(减少费用)。借方正下均自平衡。
+///
+/// 简化口径(与存货 LCA 抵销一致,单期可重算):
+///   - 固定资产净额影响 = −unrealized(消除原值利润) + 累计多提折旧转回(+unrealized×elapsed/years)。
+///   - 本函数产出两张平衡凭证,合并试算表恒等 0 保持。
+pub fn fixed_asset_profit_elimination(
+    p: &FixedAssetProfit,
+    gain_account: &str,       // 卖方处置损益/营业外收入(费用类借方正,消除时 Cr)
+    asset_account: &str,      // 固定资产(资产)
+    accum_dep_account: &str,  // 累计折旧(资产备抵,借方正下为负)
+    expense_account: &str,    // 折旧费用(费用,借方正)
+    rule_code: &str,
+    dep_rule_code: &str,
+) -> Vec<ElimEntry> {
+    let mut out = Vec::new();
+    // ① 抵原值利润:Dr 处置损益(消除卖方确认的利润,费用类 net +)/ Cr 固定资产。
+    if p.unrealized != Decimal::ZERO {
+        out.push(ElimEntry {
+            elim_type: "fixed_asset_profit".to_string(),
+            source_rule: rule_code.to_string(),
+            is_opening: false,
+            lines: vec![
+                ElimLine { account: gain_account.to_string(), dr: p.unrealized, cr: Decimal::ZERO, partner: Some(p.seller.clone()) },
+                ElimLine { account: asset_account.to_string(), dr: Decimal::ZERO, cr: p.unrealized, partner: Some(p.buyer.clone()) },
+            ],
+        });
+    }
+    // ② 折旧转回:多提折旧 = unrealized × elapsed/years(买方按含利润价多提)。
+    //    Dr 累计折旧(冲减多提,资产备抵 net +)/ Cr 折旧费用(减少费用,net −)。
+    if p.dep_years > Decimal::ZERO && p.elapsed_years > Decimal::ZERO && p.unrealized != Decimal::ZERO {
+        let excess_dep = p.unrealized * p.elapsed_years / p.dep_years;
+        if excess_dep != Decimal::ZERO {
+            out.push(ElimEntry {
+                elim_type: "fixed_asset_depreciation".to_string(),
+                source_rule: dep_rule_code.to_string(),
+                is_opening: false,
+                lines: vec![
+                    signed_line(accum_dep_account, excess_dep),
+                    signed_line(expense_account, -excess_dep),
+                ],
+            });
+        }
     }
     out
 }
@@ -647,6 +904,204 @@ where
     out
 }
 
+// ============================================================================
+// 合并四表补充:现金流量项目流水 / 权益变动流水 的逐级聚合 + 内部抵销(借方正)
+// ============================================================================
+
+/// 一条现金流量项目流水(某主体某项目;借方正净额:流入+/流出−)。
+#[derive(Debug, Clone, PartialEq)]
+pub struct CashFlowRow {
+    /// 申报主体。
+    pub entity: String,
+    /// 活动分类(operating/investing/financing)。
+    pub activity: String,
+    /// 现金流量项目码。
+    pub item_code: String,
+    /// 借方正净额(流入+/流出−)。
+    pub amount: Decimal,
+    /// 是否内部现金流(合并层需抵销)。
+    pub is_intercompany: bool,
+}
+
+/// 一条权益变动流水(某主体某权益项目某变动类型;借方正净额)。
+#[derive(Debug, Clone, PartialEq)]
+pub struct EquityChangeRow {
+    pub entity: String,
+    /// 权益变动表列码(EC01…)。
+    pub column_code: String,
+    /// 权益项目(实收资本/未分配利润/…)。
+    pub equity_item: String,
+    /// 变动类型(opening/comprehensive_income/…)。
+    pub change_type: String,
+    /// 借方正净额。
+    pub amount: Decimal,
+}
+
+/// ⑫ 现金流量逐级聚合 + 内部现金流抵销(借方正,某合并节点)。
+///
+/// - `members`:本合并节点子树内的主体集合(含各级)。
+/// - 只并入子树内主体的流水;**内部现金流**(`is_intercompany` 且对手也在子树内)在本节点抵销
+///   —— 借方正下集团内部一收一付净额相消,按 `item_code` 汇总后内部项自然轧平。
+///   工程口径:内部现金流不计入合并现金流量表(集团视角非现金流入/流出),故聚合时**跳过**
+///   `is_intercompany` 行(两端都在集团内 → 相互抵销 → 合并净额为 0)。
+/// 返回 (item_code → 借方正合计),按项目码有序(确定性)。
+pub fn aggregate_cash_flow(rows: &[CashFlowRow], members: &std::collections::HashSet<String>) -> BTreeMap<String, Decimal> {
+    let mut out: BTreeMap<String, Decimal> = BTreeMap::new();
+    for r in rows {
+        if !members.contains(&r.entity) {
+            continue;
+        }
+        // 内部现金流:集团视角非现金流入/流出,合并层抵销(不并入)。
+        if r.is_intercompany {
+            continue;
+        }
+        *out.entry(r.item_code.clone()).or_insert(Decimal::ZERO) += r.amount;
+    }
+    out
+}
+
+/// ⑬ 权益变动逐级聚合(借方正,某合并节点)。
+///
+/// - 只并入子树内主体的流水;按 `column_code` 汇总(权益变动表按列取数)。
+/// - 权益变动不做内部抵销(资本抵销已在 run_consolidation 的资本抵销环节处理;这里是披露口径的
+///   列聚合,母子权益的抵销体现在合并权益余额,不在变动流水层重复抵销)。
+/// 返回 (column_code → 借方正合计),按列码有序。
+pub fn aggregate_equity_change(rows: &[EquityChangeRow], members: &std::collections::HashSet<String>) -> BTreeMap<String, Decimal> {
+    let mut out: BTreeMap<String, Decimal> = BTreeMap::new();
+    for r in rows {
+        if !members.contains(&r.entity) {
+            continue;
+        }
+        if r.column_code.is_empty() {
+            continue;
+        }
+        *out.entry(r.column_code.clone()).or_insert(Decimal::ZERO) += r.amount;
+    }
+    out
+}
+
+/// L5 现金流量表·工作底稿法(间接法):从两期合并科目余额差额推导现金流量净额(不吃录入流水)。
+///
+/// 借方正约定下,资产负债表恒等式 Σ(所有科目)=0 恒成立;现金也是资产。故:
+///   现金变动 Δcash = −Σ(非现金科目 Δ)  (两期合并数之差)。
+/// 把非现金科目的期间变动按性质归入三大活动,得到工作底稿法现金流量:
+///   - 经营:损益类(income/expense)+ 经营性资产负债(应收/应付/存货等,非投资非筹资的资产负债)。
+///   - 投资:长期资产(固定资产/无形/长投/商誉等)。
+///   - 筹资:权益(实收资本/资本公积/NCI)+ 借款类负债。
+/// 每项现金流量 = −Δ(该非现金科目)(借方正下:资产增加耗现金→负;负债/权益增加提供现金→正)。
+///
+/// 分类由调用方传入 `classify`(account_code → CfActivity),现金科目传入 `is_cash` 跳过。
+/// 返回 (CfActivity, 借方正现金净额),三活动各一条 + 现金净增加校验条。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CfActivity {
+    Operating,
+    Investing,
+    Financing,
+    /// 现金及现金等价物本身(不计入三活动,用于校验)。
+    Cash,
+}
+
+/// 工作底稿法现金流量一行(借方正现金净额:流入+/流出−)。
+#[derive(Debug, Clone, PartialEq)]
+pub struct CashFlowLine {
+    pub activity: CfActivity,
+    /// 借方正现金净额(该活动对现金的净影响)。
+    pub amount: Decimal,
+}
+
+/// 从两期合并科目余额(借方正)推导三大活动现金流量净额 + 现金实际变动校验。
+/// `opening`/`closing`:期初/期末合并数(account → 借方正)。
+/// `classify`:account_code → CfActivity(现金科目返回 Cash)。
+/// 返回四条:Operating/Investing/Financing 的现金净额 + Cash(现金实际 Δ,应 = 三活动之和)。
+pub fn derive_cash_flow_worksheet<F>(
+    opening: &BTreeMap<String, Decimal>,
+    closing: &BTreeMap<String, Decimal>,
+    classify: F,
+) -> Vec<CashFlowLine>
+where
+    F: Fn(&str) -> CfActivity,
+{
+    let mut all: BTreeMap<&str, ()> = BTreeMap::new();
+    for k in opening.keys().chain(closing.keys()) {
+        all.insert(k.as_str(), ());
+    }
+    let (mut op, mut inv, mut fin, mut cash_delta) =
+        (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
+    for acc in all.keys() {
+        let o = opening.get(*acc).copied().unwrap_or(Decimal::ZERO);
+        let c = closing.get(*acc).copied().unwrap_or(Decimal::ZERO);
+        let delta = c - o; // 借方正下的期间变动
+        match classify(acc) {
+            CfActivity::Cash => cash_delta += delta,
+            // 非现金科目对现金的贡献 = −Δ(借方正:资产↑耗现金、负债/权益/收入↑提供现金)。
+            CfActivity::Operating => op += -delta,
+            CfActivity::Investing => inv += -delta,
+            CfActivity::Financing => fin += -delta,
+        }
+    }
+    vec![
+        CashFlowLine { activity: CfActivity::Operating, amount: op },
+        CashFlowLine { activity: CfActivity::Investing, amount: inv },
+        CashFlowLine { activity: CfActivity::Financing, amount: fin },
+        CashFlowLine { activity: CfActivity::Cash, amount: cash_delta },
+    ]
+}
+
+/// L6 交叉持股·有效持股比例(矩阵法 / 迭代收敛)。
+///
+/// 存在交叉持股(A 持 B、B 持 A)或环持时,母公司对各主体的**有效持股**需解联立:
+///   eff(X) = 母对X直接持股 + Σ_Y 母对Y有效持股 × Y对X直接持股。
+/// 即 `eff = d + eff · M`,其中 d=母对各主体直接持股行向量、M=主体间直接持股矩阵。
+/// 解 `eff = d (I − M)^{-1}`。这里用**迭代法**(Jacobi):eff_0=d,eff_{k+1}=d+eff_k·M,
+/// 收敛到不动点(持股比例<1 保证谱半径<1 → 收敛)。对小规模集团足够且无需求逆。
+///
+/// 输入:
+///   - `entities`:主体代码列表(顺序即矩阵维度)。
+///   - `parent_direct`:母公司对各主体的直接持股(code → 比例)。
+///   - `cross`:主体间直接持股 (holder, held) → 比例。
+/// 返回:每个主体的有效持股(code → 比例),按输入顺序。迭代上限 200 次或变动<1e-9 收敛。
+pub fn effective_ownership(
+    entities: &[String],
+    parent_direct: &std::collections::HashMap<String, Decimal>,
+    cross: &std::collections::HashMap<(String, String), Decimal>,
+) -> BTreeMap<String, Decimal> {
+    let n = entities.len();
+    let idx: std::collections::HashMap<&str, usize> =
+        entities.iter().enumerate().map(|(i, e)| (e.as_str(), i)).collect();
+    // d 向量。
+    let d: Vec<Decimal> = entities.iter().map(|e| parent_direct.get(e).copied().unwrap_or(Decimal::ZERO)).collect();
+    // M 矩阵:m[holder][held]。
+    let mut m = vec![vec![Decimal::ZERO; n]; n];
+    for ((holder, held), pct) in cross {
+        if let (Some(&h), Some(&k)) = (idx.get(holder.as_str()), idx.get(held.as_str())) {
+            m[h][k] += *pct;
+        }
+    }
+    // 迭代:eff_{k+1}[j] = d[j] + Σ_i eff_k[i] * m[i][j]。
+    let mut eff = d.clone();
+    let eps = Decimal::new(1, 9); // 1e-9
+    for _ in 0..200 {
+        let mut next = d.clone();
+        for i in 0..n {
+            if eff[i] == Decimal::ZERO { continue; }
+            for j in 0..n {
+                if m[i][j] != Decimal::ZERO {
+                    next[j] += eff[i] * m[i][j];
+                }
+            }
+        }
+        let mut max_delta = Decimal::ZERO;
+        for j in 0..n {
+            let dlt = (next[j] - eff[j]).abs();
+            if dlt > max_delta { max_delta = dlt; }
+        }
+        eff = next;
+        if max_delta < eps { break; }
+    }
+    entities.iter().cloned().zip(eff).collect()
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -670,6 +1125,7 @@ mod tests {
             goodwill_account: "1801".into(),   // 商誉
             nci_account: "4400".into(),        // 少数股东权益
             minority_pl_account: "4900".into(),// 少数股东损益
+            capital_reserve_account: "4002".into(), // 资本公积(同一控制下差额)
         }
     }
 
@@ -724,6 +1180,56 @@ mod tests {
     }
 
     #[test]
+    fn common_control_uses_capital_reserve_no_goodwill() {
+        // 同一控制下:子公司权益 150(实收100+盈余20+未分30),母 80% 出资 140。
+        // 差额 = 140 − 0.8×150 = 20 → 计入资本公积(非商誉);NCI = 0.2×150 = 30。
+        let sub_equity = vec![
+            ("4001".into(), dec!(-100)),
+            ("4101".into(), dec!(-20)),
+            ("4104".into(), dec!(-30)),
+        ];
+        let e = common_control_elimination(&sub_equity, dec!(140), dec!(0.8), &cfg(), "R_CC");
+        assert!(e.is_balanced(), "同一控制下资本抵销必须借贷平衡");
+        assert_eq!(e.elim_type, "capital_common_control");
+        // 差额 20 入资本公积(Dr,减少集团资本公积)。
+        assert_eq!(e.net_for("4002"), dec!(20));
+        // ★不确认商誉。
+        assert_eq!(e.net_for("1801"), dec!(0));
+        // NCI = 0.2×150 = 30(贷方,借方正 −30)。
+        assert_eq!(e.net_for("4400"), dec!(-30));
+        // 长投消除 −140。
+        assert_eq!(e.net_for("1511"), dec!(-140));
+        // 子公司权益归零。
+        assert_eq!(e.net_for("4001"), dec!(100));
+        assert_eq!(e.net_for("4104"), dec!(30));
+    }
+
+    #[test]
+    fn step_acquisition_remeasures_prev_holding() {
+        // 原持股账面 100,购买日公允 130 → 重估增值 30 确认投资收益。
+        let e = step_acquisition(dec!(100), dec!(130), "1511", "6111", "R_STEP").unwrap();
+        assert!(e.is_balanced());
+        assert_eq!(e.net_for("1511"), dec!(30)); // Dr 长投 +30
+        assert_eq!(e.net_for("6111"), dec!(-30)); // Cr 投资收益 −30
+        assert!(step_acquisition(dec!(100), dec!(100), "1511", "6111", "R_STEP").is_none());
+    }
+
+    #[test]
+    fn disposal_equity_txn_vs_loss_of_control() {
+        // 不丧失控制:处置价 80,所处置份额账面 60 → 差额 20 调资本公积(权益交易,不确认损益)。
+        let e = disposal(false, dec!(80), dec!(60), dec!(0), dec!(0), "4400", "4002", "6111", "R_DISP").unwrap();
+        assert!(e.is_balanced());
+        assert_eq!(e.net_for("4002"), dec!(-20)); // Cr 资本公积 +20(处置价高)
+        assert_eq!(e.net_for("4400"), dec!(20));  // Dr NCI(对手)
+        assert_eq!(e.net_for("6111"), dec!(0));   // ★不确认损益
+        // 丧失控制:处置价 100 + 剩余公允 50 − 原享有净资产 120 = 损益 30。
+        let l = disposal(true, dec!(100), dec!(0), dec!(50), dec!(120), "4400", "4002", "6111", "R_DISP").unwrap();
+        assert!(l.is_balanced());
+        assert_eq!(l.net_for("6111"), dec!(-30)); // Cr 投资收益 +30(收益)
+        assert_eq!(l.elim_type, "disposal_loss_control");
+    }
+
+    #[test]
     fn minority_pl_splits_profit() {
         // 子公司净利润 50,少数 20% → 少数股东损益 10
         let e = minority_pl(dec!(50), dec!(0.8), &cfg(), "R_NCI").unwrap();
@@ -746,6 +1252,19 @@ mod tests {
         assert!(sales[0].is_balanced());
         assert_eq!(sales[0].net_for("6001"), dec!(60)); // 收入 Dr +60
         assert_eq!(sales[0].net_for("6401"), dec!(-60)); // 成本 Cr −60
+    }
+
+    #[test]
+    fn dividend_elimination_removes_intragroup_income() {
+        // 母 P 自子 S 确认股利收益 40 → 抵销:Dr 投资收益 40 / Cr 未分配利润 40。
+        let matches = vec![IcMatch { entity_a: "P".into(), entity_b: "S".into(), amount: dec!(40) }];
+        let d = dividend_elimination(&matches, "6111", "4104", "R_DIV");
+        assert_eq!(d.len(), 1);
+        assert!(d[0].is_balanced());
+        assert_eq!(d[0].net_for("6111"), dec!(40));  // 投资收益 Dr +40(冲回集团内部收益)
+        assert_eq!(d[0].net_for("4104"), dec!(-40)); // 未分配利润 Cr −40(还原子被分配的留存)
+        assert_eq!(d[0].lines[0].partner.as_deref(), Some("P"));
+        assert_eq!(d[0].lines[1].partner.as_deref(), Some("S"));
     }
 
     #[test]
@@ -850,6 +1369,29 @@ mod tests {
     }
 
     #[test]
+    fn fixed_asset_profit_with_depreciation_reversal() {
+        // 内部售固定资产,原值含未实现利润 100,买方 5 年折旧,已用 2 年。
+        let p = FixedAssetProfit {
+            seller: "A".into(), buyer: "B".into(),
+            unrealized: dec!(100), dep_years: dec!(5), elapsed_years: dec!(2),
+        };
+        let es = fixed_asset_profit_elimination(&p, "6301", "1601", "1602", "6602", "R_FA", "R_FA_DEP");
+        assert_eq!(es.len(), 2);
+        assert!(all_balanced(&es), "两张凭证均借贷平衡");
+        // ① 抵原值利润:Dr 处置损益 100 / Cr 固定资产 100。
+        let orig = es.iter().find(|e| e.elim_type == "fixed_asset_profit").unwrap();
+        assert_eq!(orig.net_for("6301"), dec!(100));
+        assert_eq!(orig.net_for("1601"), dec!(-100));
+        // ② 折旧转回:多提折旧 = 100×2/5 = 40 → Dr 累计折旧 40 / Cr 折旧费用 40。
+        let dep = es.iter().find(|e| e.elim_type == "fixed_asset_depreciation").unwrap();
+        assert_eq!(dep.net_for("1602"), dec!(40));
+        assert_eq!(dep.net_for("6602"), dec!(-40));
+        // 无折旧(已用0年)→ 仅一张。
+        let p0 = FixedAssetProfit { seller: "A".into(), buyer: "B".into(), unrealized: dec!(100), dep_years: dec!(5), elapsed_years: dec!(0) };
+        assert_eq!(fixed_asset_profit_elimination(&p0, "6301", "1601", "1602", "6602", "R_FA", "R_FA_DEP").len(), 1);
+    }
+
+    #[test]
     fn ic_reconcile_matched_diff_onesided() {
         let decls = vec![
             // 对 A↔B 债务:A 报应收 100,B 报应付 100 → 平。
@@ -942,5 +1484,108 @@ mod tests {
         assert_eq!(c.curr_ownership, dec!(0));
         assert_eq!(c.prev_ownership, dec!(1));
         assert!(c.curr_method.is_none());
+    }
+
+    #[test]
+    fn aggregate_cash_flow_skips_intercompany_and_nonmembers() {
+        use std::collections::HashSet;
+        let members: HashSet<String> = ["P", "S"].iter().map(|s| s.to_string()).collect();
+        let rows = vec![
+            // P 对外销售收现 +200(经营)。
+            CashFlowRow { entity: "P".into(), activity: "operating".into(), item_code: "CF01".into(), amount: dec!(200), is_intercompany: false },
+            // S 对外销售收现 +150。
+            CashFlowRow { entity: "S".into(), activity: "operating".into(), item_code: "CF01".into(), amount: dec!(150), is_intercompany: false },
+            // P↔S 内部往来收付(内部现金流)→ 合并层不计入。
+            CashFlowRow { entity: "P".into(), activity: "operating".into(), item_code: "CF01".into(), amount: dec!(80), is_intercompany: true },
+            CashFlowRow { entity: "S".into(), activity: "operating".into(), item_code: "CF01".into(), amount: dec!(-80), is_intercompany: true },
+            // 非子树成员 X 的流水不并入。
+            CashFlowRow { entity: "X".into(), activity: "operating".into(), item_code: "CF01".into(), amount: dec!(999), is_intercompany: false },
+            // P 购建固定资产付现 −60(投资)。
+            CashFlowRow { entity: "P".into(), activity: "investing".into(), item_code: "CF20".into(), amount: dec!(-60), is_intercompany: false },
+        ];
+        let agg = aggregate_cash_flow(&rows, &members);
+        assert_eq!(agg["CF01"], dec!(350)); // 200+150,内部±80 跳过,X 不并入
+        assert_eq!(agg["CF20"], dec!(-60));
+        assert_eq!(agg.len(), 2);
+    }
+
+    #[test]
+    fn aggregate_equity_change_by_column() {
+        use std::collections::HashSet;
+        let members: HashSet<String> = ["P", "S"].iter().map(|s| s.to_string()).collect();
+        let rows = vec![
+            EquityChangeRow { entity: "P".into(), column_code: "EC01".into(), equity_item: "paid_in".into(), change_type: "opening".into(), amount: dec!(-150) },
+            EquityChangeRow { entity: "S".into(), column_code: "EC01".into(), equity_item: "paid_in".into(), change_type: "opening".into(), amount: dec!(-100) },
+            // 无列码 → 跳过(不进披露列)。
+            EquityChangeRow { entity: "P".into(), column_code: "".into(), equity_item: "x".into(), change_type: "other".into(), amount: dec!(-9) },
+            // 非成员 → 跳过。
+            EquityChangeRow { entity: "X".into(), column_code: "EC01".into(), equity_item: "paid_in".into(), change_type: "opening".into(), amount: dec!(-999) },
+            EquityChangeRow { entity: "P".into(), column_code: "EC05".into(), equity_item: "retained".into(), change_type: "comprehensive_income".into(), amount: dec!(-40) },
+        ];
+        let agg = aggregate_equity_change(&rows, &members);
+        assert_eq!(agg["EC01"], dec!(-250)); // −150 + −100
+        assert_eq!(agg["EC05"], dec!(-40));
+        assert_eq!(agg.len(), 2);
+    }
+
+    #[test]
+    fn cash_flow_worksheet_ties_to_cash_delta() {
+        // 期初 → 期末合并数(借方正)。现金1001、应收1122(经营)、固定资产1601(投资)、实收资本4001(筹资)。
+        let mut opening = BTreeMap::new();
+        opening.insert("1001".to_string(), dec!(100)); // 现金
+        opening.insert("1122".to_string(), dec!(50));  // 应收
+        opening.insert("1601".to_string(), dec!(200)); // 固定资产
+        opening.insert("4001".to_string(), dec!(-350)); // 实收资本(权益,负)
+        let mut closing = BTreeMap::new();
+        closing.insert("1001".to_string(), dec!(180)); // 现金 +80
+        closing.insert("1122".to_string(), dec!(30));  // 应收 −20(收现→经营+20)
+        closing.insert("1601".to_string(), dec!(260)); // 固定资产 +60(购建→投资−60)
+        closing.insert("4001".to_string(), dec!(-470)); // 实收资本 −120(增资→筹资+120)
+        let classify = |a: &str| match a {
+            "1001" => CfActivity::Cash,
+            "1122" => CfActivity::Operating,
+            "1601" => CfActivity::Investing,
+            "4001" => CfActivity::Financing,
+            _ => CfActivity::Operating,
+        };
+        let lines = derive_cash_flow_worksheet(&opening, &closing, classify);
+        let get = |act: CfActivity| lines.iter().find(|l| l.activity == act).unwrap().amount;
+        assert_eq!(get(CfActivity::Operating), dec!(20));   // −Δ应收 = −(−20)=+20
+        assert_eq!(get(CfActivity::Investing), dec!(-60));  // −Δ固资 = −(+60)=−60
+        assert_eq!(get(CfActivity::Financing), dec!(120));  // −Δ实收 = −(−120)=+120
+        assert_eq!(get(CfActivity::Cash), dec!(80));        // 现金实际 Δ
+        // ★ 校验:三活动之和 = 现金实际变动。
+        assert_eq!(get(CfActivity::Operating) + get(CfActivity::Investing) + get(CfActivity::Financing), get(CfActivity::Cash));
+    }
+
+    #[test]
+    fn effective_ownership_cross_holding_converges() {
+        use std::collections::HashMap;
+        // 母对 A 直接 80%,A 持 B 60%,B 持 A 10%(交叉持股)。
+        let entities = vec!["A".to_string(), "B".to_string()];
+        let mut parent = HashMap::new();
+        parent.insert("A".to_string(), dec!(0.8));
+        let mut cross = HashMap::new();
+        cross.insert(("A".to_string(), "B".to_string()), dec!(0.6)); // A→B 60%
+        cross.insert(("B".to_string(), "A".to_string()), dec!(0.1)); // B→A 10%
+        let eff = effective_ownership(&entities, &parent, &cross);
+        // 联立:effA = 0.8 + effB×0.1 ; effB = effA×0.6。
+        //  → effA = 0.8 + 0.6·effA·0.1 = 0.8 + 0.06 effA → effA(0.94)=0.8 → effA=0.851063...
+        //  → effB = 0.6·effA = 0.510638...
+        let a = eff["A"]; let b = eff["B"];
+        assert!((a - dec!(0.851063)).abs() < dec!(0.0001), "effA={a}");
+        assert!((b - dec!(0.510638)).abs() < dec!(0.0001), "effB={b}");
+    }
+
+    #[test]
+    fn effective_ownership_no_cross_equals_direct() {
+        use std::collections::HashMap;
+        let entities = vec!["A".to_string(), "B".to_string()];
+        let mut parent = HashMap::new();
+        parent.insert("A".to_string(), dec!(1));
+        parent.insert("B".to_string(), dec!(0.75));
+        let eff = effective_ownership(&entities, &parent, &HashMap::new());
+        assert_eq!(eff["A"], dec!(1));
+        assert_eq!(eff["B"], dec!(0.75));
     }
 }

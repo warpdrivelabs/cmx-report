@@ -71,6 +71,92 @@ pub async fn interim_profit_upsert(Json(b): Json<Value>) -> Result<Json<ApiResp<
 pub async fn goodwill_impair_upsert(Json(b): Json<Value>) -> Result<Json<ApiResp<Value>>> {
     Ok(Json(ApiResp::ok(store::crud::upsert_goodwill_impair(&b).await?)))
 }
+// —— L2 分步取得/处置交易 ——
+pub async fn step_txn_upsert(Json(b): Json<Value>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::crud::upsert_step_txns(&b).await?)))
+}
+// —— L3 固定资产内部交易未实现利润 ——
+pub async fn fa_profit_upsert(Json(b): Json<Value>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::crud::upsert_fa_profit(&b).await?)))
+}
+// —— L6 交叉持股·有效持股 ——
+pub async fn shareholding_upsert(Json(b): Json<Value>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::upsert_shareholdings(&b).await?)))
+}
+pub async fn effective_ownership(Query(q): Query<WsQuery>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::compute_effective_ownership(
+        q.scheme.as_deref().unwrap_or(""), q.period.as_deref().unwrap_or(""),
+    ).await?)))
+}
+// —— L7 合并附注自动生成 ——
+pub async fn notes(Query(q): Query<WsQuery>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::generate_notes(
+        q.scheme.as_deref().unwrap_or(""), q.period.as_deref().unwrap_or(""), q.node.as_deref(),
+    ).await?)))
+}
+// —— N2 现金流量/权益变动流水录入 + 聚合 ——
+pub async fn cash_flow_upsert(Json(b): Json<Value>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::crud::upsert_cash_flow_items(&b).await?)))
+}
+pub async fn equity_change_upsert(Json(b): Json<Value>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::crud::upsert_equity_changes(&b).await?)))
+}
+pub async fn cashflow_run(Json(b): Json<RunBody>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::run_cashflow(&b.scheme, &b.period).await?)))
+}
+pub async fn equity_run(Json(b): Json<RunBody>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::run_equity_change(&b.scheme, &b.period).await?)))
+}
+// —— L5 现金流量表·工作底稿法 ——
+#[derive(Debug, Deserialize)]
+pub struct CfWorksheetBody {
+    pub scheme: String,
+    pub period: String,
+    #[serde(default)]
+    pub prev_period: Option<String>,
+}
+pub async fn cashflow_worksheet_run(Json(b): Json<CfWorksheetBody>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(
+        store::run_cashflow_worksheet(&b.scheme, &b.period, b.prev_period.as_deref()).await?,
+    )))
+}
+pub async fn cash_flow_get(Query(q): Query<WsQuery>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::get_cash_flow(
+        q.scheme.as_deref().unwrap_or(""), q.period.as_deref().unwrap_or(""), q.node.as_deref().unwrap_or(""),
+    ).await?)))
+}
+pub async fn equity_change_get(Query(q): Query<WsQuery>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::get_equity_change(
+        q.scheme.as_deref().unwrap_or(""), q.period.as_deref().unwrap_or(""), q.node.as_deref().unwrap_or(""),
+    ).await?)))
+}
+
+// —— N3 关账编排 ——
+#[derive(Debug, Deserialize)]
+pub struct CloseAdvanceBody {
+    pub scheme: String,
+    pub period: String,
+    #[serde(default)]
+    pub step: Option<String>,
+    #[serde(default)]
+    pub approve: bool,
+}
+pub async fn close_start(Json(b): Json<RunBody>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::start_close(&b.scheme, &b.period).await?)))
+}
+pub async fn close_advance(Json(b): Json<CloseAdvanceBody>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(
+        store::advance_close(&b.scheme, &b.period, b.step.as_deref(), b.approve).await?,
+    )))
+}
+pub async fn close_reopen(Json(b): Json<RunBody>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::reopen_close(&b.scheme, &b.period).await?)))
+}
+pub async fn close_status(Query(q): Query<WsQuery>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::get_close_status(
+        q.scheme.as_deref().unwrap_or(""), q.period.as_deref().unwrap_or(""),
+    ).await?)))
+}
 
 // —— 运行合并 ——
 pub async fn run(Json(b): Json<RunBody>) -> Result<Json<ApiResp<Value>>> {
@@ -168,6 +254,20 @@ where
         .route("/consol/fx-rates", post(fx_rates_upsert))
         .route("/consol/interim-profit", post(interim_profit_upsert))
         .route("/consol/goodwill-impair", post(goodwill_impair_upsert))
+        .route("/consol/step-txn", post(step_txn_upsert))
+        .route("/consol/fa-profit", post(fa_profit_upsert))
+        .route("/consol/shareholding", post(shareholding_upsert))
+        .route("/consol/effective-ownership", get(effective_ownership))
+        .route("/consol/notes", get(notes))
+        .route("/consol/cash-flow", post(cash_flow_upsert).get(cash_flow_get))
+        .route("/consol/equity-change", post(equity_change_upsert).get(equity_change_get))
+        .route("/consol/cashflow/run", post(cashflow_run))
+        .route("/consol/cashflow/worksheet", post(cashflow_worksheet_run))
+        .route("/consol/equity/run", post(equity_run))
+        .route("/consol/close/start", post(close_start))
+        .route("/consol/close/advance", post(close_advance))
+        .route("/consol/close/reopen", post(close_reopen))
+        .route("/consol/close/status", get(close_status))
         .route("/consol/run", post(run))
         .route("/consol/seed-statements", post(seed_statements))
         .route("/consol/scope-change", get(scope_change).post(scope_change_run))

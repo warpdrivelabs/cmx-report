@@ -83,6 +83,8 @@ sha2 = "0.10"
 xxhash-rust = { version = "0.8", features = ["xxh64"] }
 tokio = { version = "1.41", features = ["full"] }
 axum = { version = "0.8.9", features = ["macros", "multipart"] }
+# 关账编排对接独立 cmx-flow-server 的 HTTP 客户端（env-gated，零编译期 flow 依赖；features 对齐 flowengine 适配器）。
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 # 自动读取 .env（与门户 cmx-platform-app / flow 一致：统一启动契约，bin 自读 .env 无需手动 source）
 dotenvy = "0.15"
 

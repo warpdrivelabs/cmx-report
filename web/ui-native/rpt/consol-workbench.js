@@ -21,11 +21,19 @@ const state = {
   nodeExpanded: new Set(),
   selectedNode: '',
   accounts: {}, // code -> {name, type}
-  tab: 'worksheet', // worksheet | recon | journal | scope
+  tab: 'worksheet', // worksheet | recon | journal | scope | statements
   worksheet: [], // [{account_code, individual, adjust, elim, consolidated}]
   journal: [], // [{doc_no,line_no,elim_type,account_code,dr,cr,partner,is_opening,source_rule}]
   recon: [], // [{entity_a,entity_b,ic_type,a_amount,b_amount,matched,diff,recon_status}]
   scopeChange: [], // [{org_code,org_name,change_type,curr_method,prev_method,curr_ownership,prev_ownership,prev_period}]
+  statements: [], // [{code,name}] 合并四表清单
+  stmtSel: '', // 当前预览的报表码
+  stmtCells: [], // 当前预览报表的计算 cells [{cellRef,value,rowId,colId}]
+  stmtLoading: false,
+  stmtMsg: '',
+  notes: null, // L7 合并附注 { nci, goodwill, scopeChange }
+  notesLoading: false,
+  drillAcc: '', // N5 下钻:当前高亮联动的科目码
   loading: false,
   running: false,
   message: '',
@@ -40,9 +48,11 @@ const RECON_BADGE = {
   one_sided: { label: '单边未达', color: '#fb8c00' },
 }
 const ELIM_LABEL = {
-  capital: '资本抵销', nci: '少数股东损益', debt: '债务抵销', sales: '购销抵销',
+  capital: '资本抵销', capital_common_control: '资本抵销·同一控制', nci: '少数股东损益', debt: '债务抵销', sales: '购销抵销',
   inventory: '存货未实现利润', inventory_opening: '存货利润·期初结转',
   equity_method: '权益法确认', goodwill_impair: '商誉减值',
+  step_acquisition: '分步取得重估', disposal_equity_txn: '处置·权益交易', disposal_loss_control: '处置·丧失控制损益',
+  fixed_asset_profit: '固定资产未实现利润', fixed_asset_depreciation: '固定资产折旧转回', dividend: '内部股利抵销',
 }
 
 const SCOPE_BADGE = {
@@ -239,6 +249,84 @@ async function runScopeChange () {
   }
 }
 
+// N4:出表 —— seed 合并四表定义 + 跑 CF/EQC 聚合,成功后切「合并报表」tab 并加载清单。
+async function runStatements () {
+  if (!state.selectedScheme || !state.selectedPeriod) { toast('请先选择方案与期间', 'warn'); return }
+  state.running = true; refreshAll()
+  try {
+    await apiJson('/api/consol/seed-statements', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    })
+    // 顺带跑 CF/EQC 聚合(有流水才有数,无则 0 行不报错),让 CCF/CSE 有数。
+    await Promise.all([
+      apiJson('/api/consol/cashflow/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scheme: state.selectedScheme, period: state.selectedPeriod }) }).catch(() => {}),
+      apiJson('/api/consol/equity/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scheme: state.selectedScheme, period: state.selectedPeriod }) }).catch(() => {}),
+    ])
+    toast('合并四表已出表', 'ok')
+    state.tab = 'statements'
+    await loadStatements()
+  } catch (err) {
+    toast('出表失败：' + (err.message || err), 'error')
+  } finally {
+    state.running = false; refreshAll()
+  }
+}
+
+// 合并四表清单(固定四码;经 report-detail 校验存在)。
+const CONSOL_STATEMENTS = [
+  { code: 'CBS', name: '合并资产负债表' },
+  { code: 'CIS', name: '合并利润表' },
+  { code: 'CCF', name: '合并现金流量表' },
+  { code: 'CSE', name: '合并所有者权益变动表' },
+]
+
+async function loadStatements () {
+  state.statements = CONSOL_STATEMENTS.slice()
+  // 默认预览第一张(资产负债表)。
+  if (!state.stmtSel) state.stmtSel = 'CBS'
+  await computeStatement(state.stmtSel, false)
+  refreshAll()
+}
+
+// N4:内嵌只读预览 —— 计算某合并报表(当前节点/期/方案),渲染 cells。
+async function computeStatement (code, doRefresh = true) {
+  const { selectedScheme: s, selectedPeriod: p, selectedNode: n } = state
+  if (!code || !s || !p) return
+  state.stmtSel = code
+  state.stmtLoading = true; state.stmtMsg = ''
+  if (doRefresh) refreshAll()
+  try {
+    const d = await apiJson(`/api/report-design/reports/${enc(code)}/compute`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orgCode: n, periodCode: p, schemeCode: s }),
+    })
+    state.stmtCells = normalizeArray(d.cells)
+    state.stmtMsg = `计算完成 · ${state.stmtCells.length} 格 · 错误 ${d.errorCount ?? 0}`
+  } catch (err) {
+    state.stmtCells = []
+    state.stmtMsg = '计算失败：' + (err.message || err)
+  } finally {
+    state.stmtLoading = false
+    if (doRefresh) refreshAll()
+  }
+}
+
+// L7:加载合并附注(少数股东权益/商誉/范围变动)。
+async function loadNotes () {
+  const { selectedScheme: s, selectedPeriod: p, selectedNode: n } = state
+  if (!s || !p) return
+  state.notesLoading = true; refreshAll()
+  try {
+    const d = await apiJson(`/api/consol/notes?scheme=${enc(s)}&period=${enc(p)}&node=${enc(n)}`)
+    state.notes = d.notes || null
+  } catch (err) {
+    state.notes = null
+    toast('附注生成失败：' + (err.message || err), 'error')
+  } finally {
+    state.notesLoading = false; refreshAll()
+  }
+}
+
 // ============================================================================
 // 节点树
 // ============================================================================
@@ -360,6 +448,8 @@ function explorerHtml () {
         <ui5-icon name="synchronize"></ui5-icon>运行对账</button>
       <button class="cg-btn" data-act="scope-change" ${runningAttr}>
         <ui5-icon name="org-chart"></ui5-icon>范围变动</button>
+      <button class="cg-btn" data-act="statements" ${runningAttr}>
+        <ui5-icon name="table-view"></ui5-icon>出表</button>
     </div>
     <div class="cg-tree-title"><ui5-icon name="org-chart"></ui5-icon>合并范围
       <span class="cg-tree-count">${state.nodes.length}</span></div>
@@ -407,6 +497,8 @@ function contentHtml () {
     { key: 'recon', label: '内部往来对账', icon: 'synchronize' },
     { key: 'journal', label: '合并分类账', icon: 'journey-arrive' },
     { key: 'scope', label: '范围变动', icon: 'org-chart' },
+    { key: 'statements', label: '合并报表', icon: 'table-view' },
+    { key: 'notes', label: '附注', icon: 'notes' },
   ]
   const tabRow = tabs.map((t) =>
     `<button class="cg-tab ${state.tab === t.key ? 'active' : ''}" data-tab="${t.key}">
@@ -415,6 +507,8 @@ function contentHtml () {
   if (state.tab === 'worksheet') body = worksheetTable()
   else if (state.tab === 'recon') body = reconTable()
   else if (state.tab === 'scope') body = scopeChangeTable()
+  else if (state.tab === 'statements') body = statementsPanel()
+  else if (state.tab === 'notes') body = notesPanel()
   else body = journalTable()
   return `<section class="cg cg-content">
     <div class="cg-head">
@@ -436,9 +530,17 @@ function worksheetTable () {
   }
   const rows = state.worksheet.map((r) => {
     const nm = accName(r.account_code)
-    return `<tr>
+    const acc = String(r.account_code)
+    const elimN = num(r.elim)
+    const hasElim = Math.abs(elimN) > 0.005
+    const hl = state.drillAcc && state.drillAcc === acc ? ' drill-hl' : ''
+    // N5:抵销栏非零 → 可下钻到该科目的抵销凭证(切到分类账并高亮)。
+    const elimCell = hasElim
+      ? `<td class="cg-amt ${elimN < 0 ? 'neg' : ''} cg-drill" data-drill-src="${esc(acc)}" title="查看该科目抵销来源凭证">${fmt(elimN)}<ui5-icon class="cg-drill-ic" name="drill-down"></ui5-icon></td>`
+      : amtCell(r.elim)
+    return `<tr class="cg-ws-row${hl}" data-ws-acc="${esc(acc)}">
       <td class="cg-acc"><b>${esc(r.account_code)}</b>${nm ? `<span class="cg-acc-nm">${esc(nm)}</span>` : ''}</td>
-      ${amtCell(r.individual)}${amtCell(r.adjust)}${amtCell(r.elim)}${amtCell(r.consolidated, true)}
+      ${amtCell(r.individual)}${amtCell(r.adjust)}${elimCell}${amtCell(r.consolidated, true)}
     </tr>`
   }).join('')
   const t = worksheetTotals()
@@ -527,25 +629,143 @@ function scopeChangeTable () {
   </div>`
 }
 
+// L7:合并附注面板(少数股东权益 / 商誉 / 合并范围变动),从后端派生数据渲染。
+function notesPanel () {
+  if (!state.selectedNode) {
+    return `<cmx-empty-state icon="notes" title="请选择合并节点" description="选方案/期间/节点后自动生成合并附注" size="md"></cmx-empty-state>`
+  }
+  if (state.notesLoading) return `<div class="cg-stmt-loading">附注生成中…</div>`
+  if (!state.notes) {
+    return `<cmx-empty-state icon="notes" title="暂无附注" description="运行合并后自动生成;点下方刷新" size="md">
+      </cmx-empty-state><div style="text-align:center;margin-top:12px"><button class="cg-btn cg-btn-primary" data-act="gen-notes" style="max-width:160px"><ui5-icon name="refresh"></ui5-icon>生成附注</button></div>`
+  }
+  const n = state.notes
+  // ① 少数股东权益
+  const nci = n.nci || {}
+  const nciRows = (nci.items || []).map((it) =>
+    `<tr><td class="cg-acc"><b>${esc(it.account)}</b><span class="cg-acc-nm">${esc(it.name || '')}</span></td>
+      <td class="cg-amt">${fmt(num(it.presented))}</td></tr>`).join('')
+  // ② 商誉
+  const gw = n.goodwill || {}
+  // ③ 范围变动
+  const sc = n.scopeChange || {}
+  const scRows = (sc.items || []).map((r) => {
+    const st = SCOPE_BADGE[r.change_type] || { label: r.change_type, color: '#64748b' }
+    return `<tr><td class="cg-acc"><b>${esc(r.org_code)}</b><span class="cg-acc-nm">${esc(r.org_name || '')}</span></td>
+      <td class="cg-mid"><span class="cg-badge" style="--c:${st.color}">${esc(st.label)}</span></td>
+      <td class="cg-amt">${pct(r.prev_ownership)} → ${pct(r.curr_ownership)}</td></tr>`
+  }).join('')
+  return `<div class="cg-notes">
+    <div class="cg-note-sec"><ui5-icon name="employee"></ui5-icon>附注一 · ${esc(nci.title || '少数股东权益')}
+      <span class="cg-note-total">合计 ${fmt(num(nci.totalPresented))}</span></div>
+    <div class="cg-table-wrap"><table class="cg-table">
+      <thead><tr><th class="cg-acc-h">科目</th><th class="cg-amt-h">金额(展示口径)</th></tr></thead>
+      <tbody>${nciRows || '<tr><td colspan="2" class="cg-mid">无少数股东权益</td></tr>'}</tbody></table></div>
+
+    <div class="cg-note-sec"><ui5-icon name="capital-projects"></ui5-icon>附注二 · ${esc(gw.title || '商誉')}</div>
+    <div class="cg-note-kv"><span>期末商誉合并数(${esc(gw.account || '')})</span><b>${fmt(num(gw.closingBalance))}</b></div>
+    <div class="cg-note-kv"><span>本期计提减值</span><b class="${num(gw.impairmentThisPeriod) > 0 ? 'neg' : ''}">${fmt(num(gw.impairmentThisPeriod))}</b></div>
+    <div class="cg-note-hint">${esc(gw.note || '')}</div>
+
+    <div class="cg-note-sec"><ui5-icon name="org-chart"></ui5-icon>附注三 · ${esc(sc.title || '合并范围变动')}
+      <span class="cg-note-total">${sc.count || 0} 项</span></div>
+    <div class="cg-table-wrap"><table class="cg-table">
+      <thead><tr><th class="cg-acc-h">主体</th><th class="cg-mid-h">变动</th><th class="cg-amt-h">持股(上期→本期)</th></tr></thead>
+      <tbody>${scRows || '<tr><td colspan="3" class="cg-mid">本期无合并范围变动</td></tr>'}</tbody></table></div>
+    <div style="margin-top:12px"><button class="cg-btn" data-act="gen-notes" style="max-width:140px"><ui5-icon name="refresh"></ui5-icon>刷新附注</button></div>
+  </div>`
+}
+
+// N4:合并四表内嵌只读预览面板 —— 报表切换 chips + 计算 cells 网格(A 列标签 / B 列金额)。
+function statementsPanel () {
+  if (!state.selectedNode) {
+    return `<cmx-empty-state icon="table-view" title="请选择合并节点" description="选方案/期间/节点后点「出表」生成合并四表" size="md"></cmx-empty-state>`
+  }
+  const chips = state.statements.map((s) =>
+    `<button class="cg-stmt-chip ${state.stmtSel === s.code ? 'active' : ''}" data-stmt="${esc(s.code)}">
+       <span class="cg-stmt-code">${esc(s.code)}</span>${esc(s.name)}</button>`).join('')
+  let grid = ''
+  if (state.stmtLoading) {
+    grid = `<div class="cg-stmt-loading">计算中…</div>`
+  } else if (!state.stmtCells.length) {
+    grid = `<cmx-empty-state icon="table-view" title="暂无计算结果" description="点「出表」生成四表定义后在此预览" size="sm"></cmx-empty-state>`
+  } else {
+    grid = renderStatementGrid(state.stmtCells)
+  }
+  return `<div class="cg-stmt">
+    <div class="cg-stmt-bar">
+      <div class="cg-stmt-chips">${chips || '<span class="cg-stmt-hint">点「出表」生成合并四表</span>'}</div>
+      <span class="cg-stmt-msg">${esc(state.stmtMsg)}</span>
+    </div>
+    <div class="cg-stmt-body">${grid}</div>
+  </div>`
+}
+
+// 把计算 cells([{cellRef,value,rowId,colId}])渲成两列报表(A 标签 / B 金额)。
+function renderStatementGrid (cells) {
+  const byRow = new Map()
+  for (const c of cells) {
+    const row = Number(c.rowId ?? String(c.cellRef || '').replace(/^[A-Z]+/, ''))
+    const col = Number(c.colId ?? colOfRef(c.cellRef))
+    if (!byRow.has(row)) byRow.set(row, {})
+    byRow.get(row)[col] = c.value
+  }
+  const rows = [...byRow.keys()].sort((a, b) => a - b).map((r) => {
+    const cols = byRow.get(r)
+    const label = cols[1] ?? ''
+    const hasAmt = cols[2] !== undefined && cols[2] !== '' && cols[2] !== null
+    const amtN = Number(cols[2])
+    const isNum = hasAmt && isFinite(amtN)
+    const heading = !hasAmt
+    return `<tr class="${heading ? 'cg-stmt-head-row' : ''}">
+      <td class="cg-stmt-label">${esc(label)}</td>
+      <td class="cg-stmt-amt ${isNum && amtN < 0 ? 'neg' : ''}">${isNum ? fmt(amtN) : (hasAmt ? esc(cols[2]) : '')}</td>
+    </tr>`
+  }).join('')
+  return `<div class="cg-table-wrap"><table class="cg-table cg-stmt-table">
+    <thead><tr><th class="cg-acc-h">项目</th><th class="cg-amt-h">金额</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`
+}
+
+function colOfRef (ref) {
+  const m = String(ref || '').match(/^([A-Z]+)/)
+  if (!m) return 1
+  let n = 0
+  for (const ch of m[1]) n = n * 26 + (ch.charCodeAt(0) - 64)
+  return n
+}
+
 function journalTable () {
   if (!state.journal.length) {
     return `<cmx-empty-state icon="journey-arrive" title="暂无抵销/调整凭证" description="运行合并后在此查看合并分类账" size="md"></cmx-empty-state>`
   }
+  // N5:若有下钻科目,只显示涉及该科目的凭证(整张凭证,含配平行),并给出清除条。
+  const drill = state.drillAcc
+  let list = state.journal
+  let banner = ''
+  if (drill) {
+    const docs = new Set(state.journal.filter((e) => String(e.account_code) === drill).map((e) => e.doc_no))
+    list = state.journal.filter((e) => docs.has(e.doc_no))
+    banner = `<div class="cg-drill-bar">
+      <ui5-icon name="filter"></ui5-icon>已按科目 <b>${esc(drill)}</b>${accName(drill) ? ' ' + esc(accName(drill)) : ''} 过滤抵销凭证（${docs.size} 张）
+      <button class="cg-drill-clear" data-drill-clear>清除</button></div>`
+  }
   let lastDoc = ''
-  const rows = state.journal.map((e) => {
+  const rows = list.map((e) => {
     const firstOfDoc = e.doc_no !== lastDoc
     lastDoc = e.doc_no
     const opening = Number(e.is_opening) === 1
-    return `<tr class="${firstOfDoc ? 'doc-start' : ''}">
+    const isDrill = drill && String(e.account_code) === drill
+    return `<tr class="${firstOfDoc ? 'doc-start' : ''}${isDrill ? ' drill-hl' : ''}">
       <td class="cg-doc">${firstOfDoc ? esc(e.doc_no) : ''}</td>
       <td class="cg-mid">${firstOfDoc ? `<span class="cg-badge" style="--c:#5b6b7f">${esc(ELIM_LABEL[e.elim_type] || e.elim_type)}</span>${opening ? '<span class="cg-open">期初</span>' : ''}` : ''}</td>
-      <td class="cg-acc"><b>${esc(e.account_code)}</b>${accName(e.account_code) ? `<span class="cg-acc-nm">${esc(accName(e.account_code))}</span>` : ''}</td>
+      <td class="cg-acc cg-drill" data-drill-src="${esc(String(e.account_code))}" title="回到工作底稿该科目"><b>${esc(e.account_code)}</b>${accName(e.account_code) ? `<span class="cg-acc-nm">${esc(accName(e.account_code))}</span>` : ''}</td>
       ${amtCell(e.dr)}${amtCell(e.cr)}
       <td class="cg-mid">${esc(e.partner || '')}</td>
       <td class="cg-mid cg-rule">${esc(e.source_rule || '')}</td>
     </tr>`
   }).join('')
-  return `<div class="cg-table-wrap">
+  return `${banner}<div class="cg-table-wrap">
     <table class="cg-table cg-journal">
       <thead><tr>
         <th class="cg-doc-h">凭证号</th><th class="cg-mid-h">类型</th><th class="cg-acc-h">科目</th>
@@ -623,12 +843,49 @@ function bind (root, view) {
     loadNode()
   }))
   root.querySelectorAll('[data-tab]').forEach((btn) => btn.addEventListener('click', () => {
-    state.tab = btn.getAttribute('data-tab') || 'worksheet'
-    refreshAll()
+    const next = btn.getAttribute('data-tab') || 'worksheet'
+    state.tab = next
+    // 切走非分类账/底稿页时清下钻高亮;进「合并报表」页懒加载清单。
+    if (next !== 'journal' && next !== 'worksheet') state.drillAcc = ''
+    if (next === 'statements' && !state.statements.length) loadStatements()
+    else if (next === 'notes' && !state.notes) loadNotes()
+    else refreshAll()
   }))
   root.querySelector('[data-act="run"]')?.addEventListener('click', () => runConsolidation())
   root.querySelector('[data-act="reconcile"]')?.addEventListener('click', () => runReconcile())
   root.querySelector('[data-act="scope-change"]')?.addEventListener('click', () => runScopeChange())
+  root.querySelector('[data-act="statements"]')?.addEventListener('click', () => runStatements())
+  root.querySelector('[data-act="gen-notes"]')?.addEventListener('click', () => loadNotes())
+  // N4:合并报表 chip 切换 → 计算预览。
+  root.querySelectorAll('[data-stmt]').forEach((btn) => btn.addEventListener('click', () => {
+    computeStatement(btn.getAttribute('data-stmt') || 'CBS')
+  }))
+  // N5:工作底稿抵销栏 / 分类账科目 下钻联动。
+  root.querySelectorAll('[data-drill-src]').forEach((el) => el.addEventListener('click', () => {
+    const acc = el.getAttribute('data-drill-src') || ''
+    if (!acc) return
+    state.drillAcc = acc
+    // 从底稿点抵销 → 去分类账;从分类账点科目 → 回底稿。
+    state.tab = state.tab === 'worksheet' ? 'journal' : 'worksheet'
+    refreshAll()
+    // 高亮滚动到目标行。
+    requestAnimationFrame(() => {
+      for (const host of Array.from(state.hosts)) {
+        const r = host.renderRoot || host.shadowRoot?.querySelector('.native-page-root')
+        const tgt = r?.querySelector(state.tab === 'worksheet' ? `[data-ws-acc="${cssEsc(acc)}"]` : '.cg-journal .drill-hl')
+        if (tgt) { tgt.scrollIntoView({ block: 'center', behavior: 'smooth' }); break }
+      }
+    })
+  }))
+  root.querySelector('[data-drill-clear]')?.addEventListener('click', () => {
+    state.drillAcc = ''
+    refreshAll()
+  })
+}
+
+// CSS 选择器属性值转义(科目码可能含特殊字符,保守处理)。
+function cssEsc (s) {
+  return String(s).replace(/["\\]/g, '\\$&')
 }
 
 // ============================================================================
@@ -758,6 +1015,53 @@ function styleCss () {
   .cg-toast[data-kind="error"] { background: var(--sapNegativeColor, #d32030); }
   .cg-toast[data-kind="warn"] { background: var(--sapCriticalColor, #e9730c); }
   .cg-toast[data-kind="ok"] { background: var(--sapPositiveColor, #107e3e); }
+
+  /* N4 合并报表预览 */
+  .cg-stmt { display: flex; flex-direction: column; height: 100%; }
+  .cg-stmt-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .cg-stmt-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .cg-stmt-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px;
+    border: 1px solid var(--sapButton_BorderColor, #b3c2cf); background: var(--sapButton_Background, #fff);
+    color: var(--sapButton_TextColor, #0a6ed1); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .cg-stmt-chip:hover { filter: brightness(0.97); }
+  .cg-stmt-chip.active { background: var(--sapButton_Emphasized_Background, #0a6ed1);
+    color: var(--sapButton_Emphasized_TextColor, #fff); border-color: transparent; }
+  .cg-stmt-code { font-family: monospace; font-weight: 800; font-size: 11px; opacity: .85; }
+  .cg-stmt-msg { font-size: 11.5px; color: var(--sapContent_LabelColor, #5b6b7f); margin-left: auto; }
+  .cg-stmt-hint { font-size: 12px; color: var(--sapContent_LabelColor, #5b6b7f); }
+  .cg-stmt-body { flex: 1; overflow: auto; }
+  .cg-stmt-loading { padding: 24px; text-align: center; color: var(--sapContent_LabelColor, #5b6b7f); }
+  .cg-stmt-table .cg-stmt-label { white-space: normal; }
+  .cg-stmt-table .cg-stmt-amt { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cg-stmt-table .cg-stmt-amt.neg { color: var(--sapNegativeColor, #d32030); }
+  .cg-stmt-head-row td { font-weight: 700; background: var(--sapList_HeaderBackground, #f4f7fa); }
+
+  /* N5 下钻联动 */
+  .cg-drill { cursor: pointer; }
+  .cg-drill:hover { background: var(--sapList_Hover_Background, #eef4fb); }
+  .cg-drill-ic { width: 12px; height: 12px; margin-left: 4px; opacity: .5; vertical-align: middle; }
+  .cg-ws-row.drill-hl > td, .cg-journal tr.drill-hl > td { background: color-mix(in srgb, var(--sapSelectedColor, #0a6ed1) 14%, transparent);
+    animation: cgFlash 1.2s ease-out; }
+  @keyframes cgFlash { 0% { background: color-mix(in srgb, var(--sapSelectedColor, #0a6ed1) 38%, transparent); } 100% { background: color-mix(in srgb, var(--sapSelectedColor, #0a6ed1) 14%, transparent); } }
+  .cg-drill-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 10px;
+    border-radius: 8px; font-size: 12px; background: color-mix(in srgb, var(--sapSelectedColor, #0a6ed1) 8%, transparent);
+    color: var(--sapTextColor, #1c2b36); }
+  .cg-drill-bar ui5-icon { width: 14px; height: 14px; color: var(--sapContent_IconColor, #0a6ed1); }
+  .cg-drill-clear { margin-left: auto; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--sapButton_BorderColor, #b3c2cf);
+    background: var(--sapButton_Background, #fff); color: var(--sapButton_TextColor, #0a6ed1); font-size: 11.5px; cursor: pointer; }
+
+  /* L7 附注 */
+  .cg-notes { display: flex; flex-direction: column; gap: 8px; }
+  .cg-note-sec { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 800; margin: 14px 0 4px;
+    color: var(--sapTextColor, #1c2b36); }
+  .cg-note-sec:first-child { margin-top: 2px; }
+  .cg-note-sec ui5-icon { width: 16px; height: 16px; color: var(--sapContent_IconColor, #0a6ed1); }
+  .cg-note-total { margin-left: auto; font-size: 11.5px; font-weight: 600; color: var(--sapContent_LabelColor, #5b6b7f); }
+  .cg-note-kv { display: flex; justify-content: space-between; padding: 6px 12px; font-size: 12.5px;
+    border-bottom: 1px solid var(--sapList_BorderColor, #eef2f6); }
+  .cg-note-kv b { font-variant-numeric: tabular-nums; }
+  .cg-note-kv b.neg { color: var(--sapNegativeColor, #d32030); }
+  .cg-note-hint { font-size: 11px; color: var(--sapContent_LabelColor, #5b6b7f); padding: 2px 12px 6px; font-style: italic; }
   `
 }
 

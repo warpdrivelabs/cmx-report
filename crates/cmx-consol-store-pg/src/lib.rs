@@ -13,17 +13,28 @@ use cmx_core::model::cell::{DataValue, SqlTypeMarker};
 use cmx_database_pg::get_default_pg_db_manager;
 
 use cmx_consol_model::{
-    AccountType, CONSOL_DB_ID, CapitalCfg, Contribution, ConsolMethod, ElimEntry, FxRates, IcMatch,
-    IcDeclaration, InventoryProfit, ScopeChange, ScopeNode, aggregate, capital_elimination,
-    debt_elimination, diff_scope, equity_pickup, goodwill_impairment, inventory_profit_elimination,
-    minority_pl, reconcile, sales_elimination, translate_entity, worksheet,
+    AccountType, CONSOL_DB_ID, CapitalCfg, Contribution, ConsolMethod, ElimEntry, FixedAssetProfit,
+    FxRates, IcMatch, IcDeclaration, InventoryProfit, ScopeChange, ScopeNode, aggregate,
+    capital_elimination, common_control_elimination, debt_elimination, diff_scope, disposal,
+    dividend_elimination, equity_pickup, fixed_asset_profit_elimination, goodwill_impairment,
+    inventory_profit_elimination, minority_pl, reconcile, sales_elimination, step_acquisition,
+    translate_entity, worksheet,
 };
 
 pub use cmx_api_types::{Error, Result};
 pub use cmx_biz::api_err;
 
 pub mod crud;
+pub mod cashflow;
+pub mod close;
+pub mod crossholding;
+pub mod flow_client;
+pub mod notes;
 pub mod statements;
+pub use cashflow::{run_cashflow, run_equity_change, run_cashflow_worksheet, get_cash_flow, get_equity_change};
+pub use close::{advance_close, get_close_status, reopen_close, start_close};
+pub use crossholding::{compute_effective_ownership, upsert_shareholdings};
+pub use notes::generate_notes;
 pub use statements::seed_consol_statements;
 
 // ============================================================================
@@ -61,10 +72,10 @@ pub(crate) async fn execute(sql: &str, params: Vec<DataValue>) -> Result<()> {
 }
 
 // —— 值助手 ——
-fn sv(r: &Value, k: &str) -> Option<String> {
+pub(crate) fn sv(r: &Value, k: &str) -> Option<String> {
     r.get(k).and_then(|v| v.as_str()).map(str::to_owned)
 }
-fn iv(r: &Value, k: &str) -> Option<i64> {
+pub(crate) fn iv(r: &Value, k: &str) -> Option<i64> {
     r.get(k).and_then(|v| match v {
         Value::Number(n) => n.as_i64(),
         Value::String(s) => s.parse().ok(),
@@ -73,7 +84,7 @@ fn iv(r: &Value, k: &str) -> Option<i64> {
     })
 }
 /// 从 JSON 值取 Decimal(容 String / Number)。
-fn dv_dec(r: &Value, k: &str) -> Decimal {
+pub(crate) fn dv_dec(r: &Value, k: &str) -> Decimal {
     match r.get(k) {
         Some(Value::String(s)) => s.parse().unwrap_or(Decimal::ZERO),
         Some(Value::Number(n)) => n
@@ -94,7 +105,7 @@ fn s_body(b: &Value, k: &str) -> String {
 /// 资本抵销科目配置(来自方案)。
 async fn load_capital_cfg(scheme: &str) -> Result<CapitalCfg> {
     let rows = query_rows(
-        "SELECT investment_account, goodwill_account, nci_account, minority_pl_account \
+        "SELECT investment_account, goodwill_account, nci_account, minority_pl_account, capital_reserve_account \
          FROM cg_consol_scheme WHERE scheme_code=$1",
         vec![DataValue::String(scheme.to_string())],
         "consol_scheme",
@@ -106,6 +117,7 @@ async fn load_capital_cfg(scheme: &str) -> Result<CapitalCfg> {
         goodwill_account: sv(r, "goodwill_account").unwrap_or_else(|| "1801".into()),
         nci_account: sv(r, "nci_account").unwrap_or_else(|| "4400".into()),
         minority_pl_account: sv(r, "minority_pl_account").unwrap_or_else(|| "4900".into()),
+        capital_reserve_account: sv(r, "capital_reserve_account").unwrap_or_else(|| "4002".into()),
     })
 }
 
@@ -149,17 +161,19 @@ async fn load_fx_rates(scheme: &str, period: &str) -> Result<HashMap<(String, St
 }
 
 /// 合并范围节点(某方案某期);附带每节点的投资额与功能币。
-struct ScopeLoaded {
-    nodes: Vec<ScopeNode>,
+pub(crate) struct ScopeLoaded {
+    pub(crate) nodes: Vec<ScopeNode>,
     investment: HashMap<String, Decimal>,
     /// org_code → 功能币种(空=随集团报告币,不折算)。
     currency: HashMap<String, String>,
+    /// 同一控制下企业合并的子节点集(L1:资本抵销走权益结合法,差额入资本公积不确认商誉)。
+    common_control: HashSet<String>,
 }
 
-async fn load_scope(scheme: &str, period: &str) -> Result<ScopeLoaded> {
+pub(crate) async fn load_scope(scheme: &str, period: &str) -> Result<ScopeLoaded> {
     let rows = query_rows(
         "SELECT org_code, org_name, parent_code, consol_method, ownership_pct, is_leaf, \
-                level_no, investment_amount, currency \
+                level_no, investment_amount, currency, under_common_control \
          FROM cg_scope WHERE scheme_code=$1 AND period_code=$2 AND COALESCE(status,1)=1 \
          ORDER BY level_no, org_code",
         vec![DataValue::String(scheme.to_string()), DataValue::String(period.to_string())],
@@ -169,11 +183,15 @@ async fn load_scope(scheme: &str, period: &str) -> Result<ScopeLoaded> {
     let mut nodes = Vec::new();
     let mut investment = HashMap::new();
     let mut currency = HashMap::new();
+    let mut common_control = HashSet::new();
     for r in &rows {
         let code = sv(r, "org_code").unwrap_or_default();
         investment.insert(code.clone(), dv_dec(r, "investment_amount"));
         if let Some(c) = sv(r, "currency").filter(|s| !s.is_empty()) {
             currency.insert(code.clone(), c);
+        }
+        if iv(r, "under_common_control").unwrap_or(0) == 1 {
+            common_control.insert(code.clone());
         }
         nodes.push(ScopeNode {
             code: code.clone(),
@@ -188,7 +206,7 @@ async fn load_scope(scheme: &str, period: &str) -> Result<ScopeLoaded> {
             level: iv(r, "level_no").unwrap_or(1) as i32,
         });
     }
-    Ok(ScopeLoaded { nodes, investment, currency })
+    Ok(ScopeLoaded { nodes, investment, currency, common_control })
 }
 
 /// CoA 科目映射(C1):(主体, 本地科目) → (集团科目, 符号)。entity_code 为空=通配所有主体。
@@ -250,7 +268,6 @@ async fn load_entity_balances(
     Ok(out)
 }
 
-/// 集团科目性质:account → account_type(小写)。
 async fn load_account_types(scheme: &str) -> Result<HashMap<String, String>> {
     let rows = query_rows(
         "SELECT account_code, account_type FROM cg_group_account \
@@ -263,6 +280,11 @@ async fn load_account_types(scheme: &str) -> Result<HashMap<String, String>> {
         .iter()
         .filter_map(|r| Some((sv(r, "account_code")?, sv(r, "account_type")?.to_ascii_lowercase())))
         .collect())
+}
+
+/// 集团科目性质(pub(crate) 包装,供 cashflow L5 工作底稿法分类账户用)。
+pub(crate) async fn load_account_types_pub(scheme: &str) -> Result<HashMap<String, String>> {
+    load_account_types(scheme).await
 }
 
 /// 抵销规则:elim_type → (dr_account, cr_account, rule_code)。取每类第一条启用规则。
@@ -349,6 +371,68 @@ async fn load_goodwill_impair(scheme: &str, period: &str) -> Result<HashMap<Stri
         }
     }
     Ok(out)
+}
+
+/// L2 分步取得/处置交易(某方案某期);按合并节点归组。
+struct StepTxn {
+    node: String,
+    txn_type: String,
+    loses_control: bool,
+    prev_carrying: Decimal,
+    prev_fair_value: Decimal,
+    proceeds: Decimal,
+    disposed_share: Decimal,
+    retained_fair_value: Decimal,
+    net_assets_share: Decimal,
+}
+
+async fn load_step_txns(scheme: &str, period: &str) -> Result<Vec<StepTxn>> {
+    let rows = query_rows(
+        "SELECT node_code, txn_type, loses_control, prev_carrying, prev_fair_value, proceeds, \
+                disposed_share, retained_fair_value, net_assets_share FROM cg_step_txn \
+         WHERE scheme_code=$1 AND period_code=$2 AND COALESCE(status,1)=1",
+        vec![DataValue::String(scheme.to_string()), DataValue::String(period.to_string())],
+        "consol_step_txn",
+    )
+    .await?;
+    Ok(rows
+        .iter()
+        .filter_map(|r| {
+            let node = sv(r, "node_code").filter(|s| !s.is_empty())?;
+            Some(StepTxn {
+                node,
+                txn_type: sv(r, "txn_type").unwrap_or_default(),
+                loses_control: iv(r, "loses_control").unwrap_or(0) == 1,
+                prev_carrying: dv_dec(r, "prev_carrying"),
+                prev_fair_value: dv_dec(r, "prev_fair_value"),
+                proceeds: dv_dec(r, "proceeds"),
+                disposed_share: dv_dec(r, "disposed_share"),
+                retained_fair_value: dv_dec(r, "retained_fair_value"),
+                net_assets_share: dv_dec(r, "net_assets_share"),
+            })
+        })
+        .collect())
+}
+
+/// L3 固定资产内部交易未实现利润(某方案某期);LCA 抵销输入。
+async fn load_fa_profit(scheme: &str, period: &str) -> Result<Vec<FixedAssetProfit>> {
+    let rows = query_rows(
+        "SELECT seller, buyer, unrealized, dep_years, elapsed_years FROM cg_fa_profit \
+         WHERE scheme_code=$1 AND period_code=$2 AND COALESCE(status,1)=1",
+        vec![DataValue::String(scheme.to_string()), DataValue::String(period.to_string())],
+        "consol_fa_profit",
+    )
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| FixedAssetProfit {
+            seller: sv(r, "seller").unwrap_or_default(),
+            buyer: sv(r, "buyer").unwrap_or_default(),
+            unrealized: dv_dec(r, "unrealized"),
+            dep_years: dv_dec(r, "dep_years"),
+            elapsed_years: dv_dec(r, "elapsed_years"),
+        })
+        .collect())
 }
 
 // ============================================================================
@@ -475,6 +559,8 @@ pub async fn run_consolidation(scheme: &str, period: &str) -> Result<Value> {
     let ic = load_ic_matches(scheme, period).await?;
     let interim = load_interim_profit(scheme, period).await?;
     let goodwill_impair = load_goodwill_impair(scheme, period).await?;
+    let step_txns = load_step_txns(scheme, period).await?;
+    let fa_profit = load_fa_profit(scheme, period).await?;
     // 外币折算配置(C5):集团报告币 + CTA 科目 + 本期汇率。
     let fx = load_scheme_fx(scheme).await?;
     let fx_rates = load_fx_rates(scheme, period).await?;
@@ -593,8 +679,17 @@ pub async fn run_consolidation(scheme: &str, period: &str) -> Result<Value> {
                     })
                     .map(|(a, v)| (a.clone(), *v))
                     .collect();
-                let rc = rules.get("capital").map(|r| r.2.clone()).unwrap_or_else(|| "R_CAPITAL".into());
-                elims.push(capital_elimination(&sub_equity, inv, kn.ownership, &cfg, &rc));
+                // L1:同一控制下企业合并(under_common_control)→ 权益结合法(差额入资本公积,不确认商誉);
+                // 否则常规资本抵销(差额→商誉)。
+                if scope.common_control.contains(k) {
+                    let rc = rules.get("capital_common_control").map(|r| r.2.clone())
+                        .or_else(|| rules.get("capital").map(|r| r.2.clone()))
+                        .unwrap_or_else(|| "R_CC".into());
+                    elims.push(common_control_elimination(&sub_equity, inv, kn.ownership, &cfg, &rc));
+                } else {
+                    let rc = rules.get("capital").map(|r| r.2.clone()).unwrap_or_else(|| "R_CAPITAL".into());
+                    elims.push(capital_elimination(&sub_equity, inv, kn.ownership, &cfg, &rc));
+                }
             }
             // —— 少数股东损益:凡持股 <100% 的全额合并子公司都要分摊(与是否资本抵销解耦) ——
             // 少数股东损益 = (1−p) × 子净利润;净利润(自然) = −Σ(损益科目 借方正)。
@@ -636,6 +731,13 @@ pub async fn run_consolidation(scheme: &str, period: &str) -> Result<Value> {
                         elims.extend(sales_elimination(std::slice::from_ref(m), dr, cr, rc));
                     }
                 }
+                // L4 内部股利抵销:母(entity_a)自子(entity_b)确认的股利收益冲回 + 还原留存。
+                "dividend" => {
+                    let (inc_acc, re_acc, rc) = rules.get("dividend")
+                        .map(|r| (r.0.clone(), r.1.clone(), r.2.clone()))
+                        .unwrap_or_else(|| ("6111".into(), "4104".into(), "R_DIV".into()));
+                    elims.extend(dividend_elimination(std::slice::from_ref(m), &inc_acc, &re_acc, &rc));
+                }
                 _ => {}
             }
         }
@@ -655,6 +757,27 @@ pub async fn run_consolidation(scheme: &str, period: &str) -> Result<Value> {
                 }
                 elims.extend(inventory_profit_elimination(
                     p, &cost_acc, &inv_acc, &open_re_acc, &inv_rc, &open_rc,
+                ));
+            }
+        }
+
+        // ③' L3 固定资产内部交易未实现利润 + 逐期折旧转回:卖买双方在本节点子树且为 LCA。
+        {
+            let gain = rules.get("fixed_asset_profit").map(|r| r.0.clone()).filter(|s| !s.is_empty()).unwrap_or_else(|| "6301".into());
+            let asset = rules.get("fixed_asset_profit").map(|r| r.1.clone()).filter(|s| !s.is_empty()).unwrap_or_else(|| "1601".into());
+            let fa_rc = rules.get("fixed_asset_profit").map(|r| r.2.clone()).unwrap_or_else(|| "R_FA".into());
+            let (accum_dep, expense, dep_rc) = rules.get("fixed_asset_depreciation")
+                .map(|r| (r.0.clone(), r.1.clone(), r.2.clone()))
+                .unwrap_or_else(|| ("1602".into(), "6602".into(), "R_FA_DEP".into()));
+            for p in &fa_profit {
+                if !members.contains(&p.seller) || !members.contains(&p.buyer) {
+                    continue;
+                }
+                if same_child_subtree(&kids, &subtree, &p.seller, &p.buyer) {
+                    continue;
+                }
+                elims.extend(fixed_asset_profit_elimination(
+                    p, &gain, &asset, &accum_dep, &expense, &fa_rc, &dep_rc,
                 ));
             }
         }
@@ -702,6 +825,30 @@ pub async fn run_consolidation(scheme: &str, period: &str) -> Result<Value> {
             }
         }
 
+        // ⑥ L2 分步取得/处置(本节点):原持股公允重估 / 处置权益交易或损益。进"调整"栏。
+        for t in step_txns.iter().filter(|t| t.node == node.code) {
+            let gain_acc = rules.get("step_acquisition").map(|r| r.0.clone())
+                .filter(|s| !s.is_empty()).unwrap_or_else(|| "6111".to_string());
+            match t.txn_type.as_str() {
+                "step_acq" => {
+                    let rc = rules.get("step_acquisition").map(|r| r.2.clone()).unwrap_or_else(|| "R_STEP".into());
+                    if let Some(e) = step_acquisition(t.prev_carrying, t.prev_fair_value, &cfg.investment_account, &gain_acc, &rc) {
+                        adjusts.push(e);
+                    }
+                }
+                "disposal" => {
+                    let rc = rules.get("disposal").map(|r| r.2.clone()).unwrap_or_else(|| "R_DISP".into());
+                    if let Some(e) = disposal(
+                        t.loses_control, t.proceeds, t.disposed_share, t.retained_fair_value,
+                        t.net_assets_share, &cfg.nci_account, &cfg.capital_reserve_account, &gain_acc, &rc,
+                    ) {
+                        adjusts.push(e);
+                    }
+                }
+                _ => {}
+            }
+        }
+
         // —— 工作底稿 + 落库 ——
         let cells = worksheet(&node.code, &individual, &adjusts, &elims);
         let consolidated: BTreeMap<String, Decimal> =
@@ -727,7 +874,7 @@ pub async fn run_consolidation(scheme: &str, period: &str) -> Result<Value> {
 }
 
 /// 计算每节点子树成员集(含自身)。
-fn compute_subtrees(
+pub(crate) fn compute_subtrees(
     nodes: &[ScopeNode],
     children: &HashMap<String, Vec<String>>,
 ) -> HashMap<String, HashSet<String>> {
@@ -747,6 +894,22 @@ fn compute_subtrees(
             (n.code.clone(), s)
         })
         .collect()
+}
+
+/// 装载范围 + 直接算出每节点子树成员集(供 CF/EQC 聚合复用)。返回 (节点, 子树映射)。
+pub(crate) async fn load_scope_subtrees(
+    scheme: &str,
+    period: &str,
+) -> Result<(Vec<ScopeNode>, HashMap<String, HashSet<String>>)> {
+    let scope = load_scope(scheme, period).await?;
+    let mut children: HashMap<String, Vec<String>> = HashMap::new();
+    for n in &scope.nodes {
+        if let Some(p) = &n.parent {
+            children.entry(p.clone()).or_default().push(n.code.clone());
+        }
+    }
+    let subtree = compute_subtrees(&scope.nodes, &children);
+    Ok((scope.nodes, subtree))
 }
 
 /// 两个主体是否落在同一个直接下级的子树内(→ 应在更低层抵销,本层跳过)。
