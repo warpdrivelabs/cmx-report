@@ -1101,6 +1101,51 @@ pub fn effective_ownership(
     entities.iter().cloned().zip(eff).collect()
 }
 
+/// O1 净投资套期(境外经营净投资套期,CAS 24 / IAS 39·IFRS 9)。
+///
+/// 套期工具(如外币借款)对境外经营净投资的套期,**有效部分**的利得/损失计入其他综合收益
+/// (与外币折算差额 CTA 同处,对冲净投资的折算风险),不进当期损益;无效部分进损益(此处不建模)。
+/// 借方正下把有效部分从**套期工具科目**重分类至 **CTA(OCI)**:两腿自平衡。
+/// `effective_amount`:有效部分借方正净额(+ 表示工具端借方增加、CTA 端贷方增加)。0 → None。
+pub fn net_investment_hedge(
+    effective_amount: Decimal,
+    cta_account: &str,
+    hedge_instrument_account: &str,
+    rule_code: &str,
+) -> Option<ElimEntry> {
+    if effective_amount == Decimal::ZERO {
+        return None;
+    }
+    // 有效部分:Dr 套期工具(将其 FX 损益移出)/ Cr CTA(计入 OCI);借方正下 net 相消自平衡。
+    Some(ElimEntry {
+        elim_type: "net_investment_hedge".to_string(),
+        source_rule: rule_code.to_string(),
+        is_opening: false,
+        lines: vec![
+            signed_line(hedge_instrument_account, effective_amount),
+            signed_line(cta_account, -effective_amount),
+        ],
+    })
+}
+
+/// O2 商誉减值测试(CGU 可收回金额法,CAS 8 / IAS 36)。
+///
+/// 现金产出单元(CGU)账面价值(含分摊的商誉)与**可收回金额**(公允价值减处置费用、使用价值孰高)
+/// 比较:减值损失 = max(0, 账面 − 可收回);减值**先冲减商誉**,故封顶在商誉账面。
+/// 返回本期应计提的商誉减值额(自然口径,正;0 表示未减值)。纯函数,供 store 算出后走 C6 减值路径。
+pub fn goodwill_impairment_test(
+    carrying_amount: Decimal,
+    recoverable_amount: Decimal,
+    goodwill_carrying: Decimal,
+) -> Decimal {
+    let shortfall = carrying_amount - recoverable_amount;
+    if shortfall <= Decimal::ZERO {
+        return Decimal::ZERO;
+    }
+    // 减值先冲商誉,封顶在商誉账面(简化:不再向下分摊到其他长期资产)。
+    shortfall.min(goodwill_carrying.max(Decimal::ZERO))
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -1587,5 +1632,26 @@ mod tests {
         let eff = effective_ownership(&entities, &parent, &HashMap::new());
         assert_eq!(eff["A"], dec!(1));
         assert_eq!(eff["B"], dec!(0.75));
+    }
+
+    #[test]
+    fn net_investment_hedge_reclassifies_to_cta() {
+        // 有效部分 50 从套期工具重分类至 CTA(OCI)。
+        let e = net_investment_hedge(dec!(50), "4106", "2501", "R_NIH").unwrap();
+        assert!(e.is_balanced());
+        assert_eq!(e.net_for("2501"), dec!(50));  // Dr 套期工具 +50
+        assert_eq!(e.net_for("4106"), dec!(-50)); // Cr CTA(OCI) −50
+        assert_eq!(e.elim_type, "net_investment_hedge");
+        assert!(net_investment_hedge(dec!(0), "4106", "2501", "R_NIH").is_none());
+    }
+
+    #[test]
+    fn goodwill_impairment_test_capped_at_goodwill() {
+        // 账面 500(含商誉 80),可收回 460 → 缺口 40 ≤ 商誉 80 → 减值 40。
+        assert_eq!(goodwill_impairment_test(dec!(500), dec!(460), dec!(80)), dec!(40));
+        // 缺口 120 > 商誉 80 → 封顶 80(先冲商誉)。
+        assert_eq!(goodwill_impairment_test(dec!(500), dec!(380), dec!(80)), dec!(80));
+        // 可收回 ≥ 账面 → 不减值。
+        assert_eq!(goodwill_impairment_test(dec!(500), dec!(520), dec!(80)), dec!(0));
     }
 }

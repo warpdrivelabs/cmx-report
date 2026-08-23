@@ -94,6 +94,20 @@ pub async fn notes(Query(q): Query<WsQuery>) -> Result<Json<ApiResp<Value>>> {
         q.scheme.as_deref().unwrap_or(""), q.period.as_deref().unwrap_or(""), q.node.as_deref(),
     ).await?)))
 }
+// —— O1 净投资套期(外币):有效部分→CTA 储备对冲折算差额 ——
+pub async fn net_investment_hedge_upsert(Json(b): Json<Value>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::crud::upsert_net_investment_hedge(&b).await?)))
+}
+// —— O2 商誉减值测试(CGU 可收回金额 vs 账面)——
+pub async fn goodwill_cgu_upsert(Json(b): Json<Value>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::crud::upsert_goodwill_cgu(&b).await?)))
+}
+// —— O3 自动 IC 调整建议(读 cg_ic_recon diff 行,纯分析)——
+pub async fn ic_adjustment_suggestions(Query(q): Query<WsQuery>) -> Result<Json<ApiResp<Value>>> {
+    Ok(Json(ApiResp::ok(store::notes::ic_adjustment_suggestions(
+        q.scheme.as_deref().unwrap_or(""), q.period.as_deref().unwrap_or(""),
+    ).await?)))
+}
 // —— N2 现金流量/权益变动流水录入 + 聚合 ——
 pub async fn cash_flow_upsert(Json(b): Json<Value>) -> Result<Json<ApiResp<Value>>> {
     Ok(Json(ApiResp::ok(store::crud::upsert_cash_flow_items(&b).await?)))
@@ -259,6 +273,9 @@ where
         .route("/consol/shareholding", post(shareholding_upsert))
         .route("/consol/effective-ownership", get(effective_ownership))
         .route("/consol/notes", get(notes))
+        .route("/consol/net-investment-hedge", post(net_investment_hedge_upsert))
+        .route("/consol/goodwill-cgu", post(goodwill_cgu_upsert))
+        .route("/consol/ic-adjustment-suggestions", get(ic_adjustment_suggestions))
         .route("/consol/cash-flow", post(cash_flow_upsert).get(cash_flow_get))
         .route("/consol/equity-change", post(equity_change_upsert).get(equity_change_get))
         .route("/consol/cashflow/run", post(cashflow_run))

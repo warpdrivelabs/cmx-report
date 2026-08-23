@@ -138,3 +138,37 @@ async fn note_scope_change(scheme: &str, period: &str) -> Result<Value> {
     .await?;
     Ok(json!({ "title": "合并范围变动", "count": rows.len(), "items": rows }))
 }
+
+/// O3 自动内部往来调整建议:对 cg_ic_recon 的 diff 行(A≠B),生成建议调整分录方向与金额。
+/// 纯分析(读对账结果,不落账):diff = a_amount − b_amount;建议把少报方调整到匹配对方。
+/// 返回 { count, suggestions:[{entity_a,entity_b,ic_type,a_amount,b_amount,diff,suggestion,adjust_entity,adjust_amount}] }。
+pub async fn ic_adjustment_suggestions(scheme: &str, period: &str) -> Result<Value> {
+    let rows = query_rows(
+        "SELECT entity_a, entity_b, ic_type, a_amount, b_amount, diff, recon_status \
+         FROM cg_ic_recon WHERE scheme_code=$1 AND period_code=$2 AND recon_status='diff' \
+         ORDER BY entity_a, entity_b, ic_type",
+        vec![DataValue::String(scheme.to_string()), DataValue::String(period.to_string())],
+        "ic_adj_suggest",
+    )
+    .await?;
+    let mut out = Vec::new();
+    for r in &rows {
+        let a = dv_dec(r, "a_amount");
+        let b = dv_dec(r, "b_amount");
+        let diff = dv_dec(r, "diff"); // a − b
+        let ea = sv(r, "entity_a").unwrap_or_default();
+        let eb = sv(r, "entity_b").unwrap_or_default();
+        // diff>0:A 侧(债权/收入)报多 → 建议调减 A 或调增 B;取「把少报方 B 调增 |diff|」。
+        let (adjust_entity, adjust_amount, suggestion) = if diff > rust_decimal::Decimal::ZERO {
+            (eb.clone(), diff, format!("{eb} 少报 {diff},建议调增 {eb} 至与 {ea} 匹配"))
+        } else {
+            (ea.clone(), -diff, format!("{ea} 少报 {},建议调增 {ea} 至与 {eb} 匹配", -diff))
+        };
+        out.push(json!({
+            "entity_a": ea, "entity_b": eb, "ic_type": sv(r, "ic_type"),
+            "a_amount": a.to_string(), "b_amount": b.to_string(), "diff": diff.to_string(),
+            "adjust_entity": adjust_entity, "adjust_amount": adjust_amount.to_string(), "suggestion": suggestion,
+        }));
+    }
+    Ok(json!({ "ok": true, "scheme": scheme, "period": period, "count": out.len(), "suggestions": out }))
+}
