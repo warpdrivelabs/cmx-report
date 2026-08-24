@@ -87,6 +87,8 @@ const readTab = `(() => {
   return {
     reconRows: root.querySelectorAll('.cg-table tbody tr').length,
     hasDiffRow: !!root.querySelector('tr.row-diff'),
+    hasSuggestPanel: !!root.querySelector('.cg-suggest'),
+    suggestRows: root.querySelectorAll('.cg-suggest .cg-table tbody tr').length,
     journalRules: Array.from(root.querySelectorAll('.cg-journal tbody tr .cg-rule')).map(e => e.textContent.trim()).filter(Boolean),
     journalTypes: Array.from(root.querySelectorAll('.cg-journal tbody tr .cg-badge')).map(e => e.textContent.trim()),
     text: root.textContent,
@@ -153,6 +155,7 @@ async function main () {
     const rc = await page.evaluate(readTab)
     check('RECON_TEST 对账表有行', rc.reconRows >= 2, `行=${rc.reconRows}`)
     check('RECON_TEST 差异行标红(diff)', rc.hasDiffRow)
+    check('O3 自动调整建议面板渲染', rc.hasSuggestPanel && rc.suggestRows >= 1, `panel=${rc.hasSuggestPanel} rows=${rc.suggestRows}`)
 
     // 切到 CAS_LEGAL + 范围变动 tab —— 断言 2026-12 有处置/新纳入徽标
     await page.evaluate(pickScheme('CAS_LEGAL'))

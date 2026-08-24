@@ -16,9 +16,9 @@ use cmx_consol_model::{
     AccountType, CONSOL_DB_ID, CapitalCfg, Contribution, ConsolMethod, ElimEntry, FixedAssetProfit,
     FxRates, IcMatch, IcDeclaration, InventoryProfit, ScopeChange, ScopeNode, aggregate,
     capital_elimination, common_control_elimination, debt_elimination, diff_scope, disposal,
-    dividend_elimination, equity_pickup, fixed_asset_profit_elimination, goodwill_impairment,
-    inventory_profit_elimination, minority_pl, reconcile, sales_elimination, step_acquisition,
-    translate_entity, worksheet,
+    dividend_elimination, effective_ownership, equity_pickup, fixed_asset_profit_elimination,
+    goodwill_impairment, goodwill_impairment_test, inventory_profit_elimination, minority_pl,
+    net_investment_hedge, reconcile, sales_elimination, step_acquisition, translate_entity, worksheet,
 };
 
 pub use cmx_api_types::{Error, Result};
@@ -435,7 +435,56 @@ async fn load_fa_profit(scheme: &str, period: &str) -> Result<Vec<FixedAssetProf
         .collect())
 }
 
-// ============================================================================
+/// O1 净投资套期(某方案某期):node → (套期工具科目, 有效部分借方正净额)。
+async fn load_net_investment_hedge(scheme: &str, period: &str) -> Result<HashMap<String, (String, Decimal)>> {
+    let rows = query_rows(
+        "SELECT node_code, hedge_instrument_account, effective_amount FROM cg_net_investment_hedge \
+         WHERE scheme_code=$1 AND period_code=$2 AND COALESCE(status,1)=1",
+        vec![DataValue::String(scheme.to_string()), DataValue::String(period.to_string())],
+        "consol_nih",
+    )
+    .await?;
+    let mut out = HashMap::new();
+    for r in &rows {
+        if let Some(node) = sv(r, "node_code").filter(|s| !s.is_empty()) {
+            out.insert(node, (sv(r, "hedge_instrument_account").unwrap_or_else(|| "2501".into()), dv_dec(r, "effective_amount")));
+        }
+    }
+    Ok(out)
+}
+
+/// O6 有效持股(某方案某期):从 cg_shareholding 求解有效持股(交叉持股迭代收敛)。
+/// 返回 org_code → 有效持股比例;无 cg_shareholding 数据 → 空 map(调用方回退直接持股)。
+async fn load_effective_ownership(scheme: &str, period: &str) -> Result<HashMap<String, Decimal>> {
+    let rows = query_rows(
+        "SELECT holder, held, pct, is_parent FROM cg_shareholding \
+         WHERE scheme_code=$1 AND period_code=$2 AND COALESCE(status,1)=1",
+        vec![DataValue::String(scheme.to_string()), DataValue::String(period.to_string())],
+        "consol_shareholding_eff",
+    )
+    .await?;
+    if rows.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let mut parent_direct: HashMap<String, Decimal> = HashMap::new();
+    let mut cross: HashMap<(String, String), Decimal> = HashMap::new();
+    let mut entset: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for r in &rows {
+        let holder = sv(r, "holder").unwrap_or_default();
+        let held = sv(r, "held").unwrap_or_default();
+        if held.is_empty() { continue; }
+        let pct = dv_dec(r, "pct");
+        if iv(r, "is_parent").unwrap_or(0) == 1 {
+            *parent_direct.entry(held.clone()).or_default() += pct;
+        } else if !holder.is_empty() {
+            *cross.entry((holder.clone(), held.clone())).or_default() += pct;
+            entset.insert(holder);
+        }
+        entset.insert(held);
+    }
+    let entities: Vec<String> = entset.into_iter().collect();
+    Ok(effective_ownership(&entities, &parent_direct, &cross).into_iter().collect())
+}
 // C4 内部往来对账引擎:申报 → 双边配对 → 差异检测 → matched 回填抵销输入
 // ============================================================================
 
@@ -561,6 +610,27 @@ pub async fn run_consolidation(scheme: &str, period: &str) -> Result<Value> {
     let goodwill_impair = load_goodwill_impair(scheme, period).await?;
     let step_txns = load_step_txns(scheme, period).await?;
     let fa_profit = load_fa_profit(scheme, period).await?;
+    let hedge = load_net_investment_hedge(scheme, period).await?;
+    let effective_own = load_effective_ownership(scheme, period).await?; // O6:空=回退直接持股
+    // O2:先跑商誉减值测试(CGU),把算出的减值额并入 goodwill_impair(与 C6 手工减值合并)。
+    let goodwill_impair = {
+        let mut gi = goodwill_impair;
+        let cgu = query_rows(
+            "SELECT node_code, carrying_amount, recoverable_amount, goodwill_carrying FROM cg_goodwill_cgu \
+             WHERE scheme_code=$1 AND period_code=$2 AND COALESCE(status,1)=1",
+            vec![DataValue::String(scheme.to_string()), DataValue::String(period.to_string())],
+            "consol_goodwill_cgu",
+        ).await?;
+        for r in &cgu {
+            if let Some(node) = sv(r, "node_code").filter(|s| !s.is_empty()) {
+                let amt = goodwill_impairment_test(dv_dec(r, "carrying_amount"), dv_dec(r, "recoverable_amount"), dv_dec(r, "goodwill_carrying"));
+                if amt != Decimal::ZERO {
+                    *gi.entry(node).or_insert(Decimal::ZERO) += amt;
+                }
+            }
+        }
+        gi
+    };
     // 外币折算配置(C5):集团报告币 + CTA 科目 + 本期汇率。
     let fx = load_scheme_fx(scheme).await?;
     let fx_rates = load_fx_rates(scheme, period).await?;
@@ -666,6 +736,8 @@ pub async fn run_consolidation(scheme: &str, period: &str) -> Result<Value> {
             }
             let child_bal = node_consolidated.get(k).cloned().unwrap_or_default();
             let inv = scope.investment.get(k).copied().unwrap_or(Decimal::ZERO);
+            // O6:有效持股优先(交叉持股方案);无 cg_shareholding 数据则回退直接持股(8 方案零回归)。
+            let own = effective_own.get(k).copied().unwrap_or(kn.ownership);
             // —— 资本抵销:仅当有投资额(母对子长投)时 ——
             if inv != Decimal::ZERO {
                 // 子公司权益科目(用于资本抵销)。★排除 CTA 折算差额:CTA 是折算后
@@ -685,14 +757,14 @@ pub async fn run_consolidation(scheme: &str, period: &str) -> Result<Value> {
                     let rc = rules.get("capital_common_control").map(|r| r.2.clone())
                         .or_else(|| rules.get("capital").map(|r| r.2.clone()))
                         .unwrap_or_else(|| "R_CC".into());
-                    elims.push(common_control_elimination(&sub_equity, inv, kn.ownership, &cfg, &rc));
+                    elims.push(common_control_elimination(&sub_equity, inv, own, &cfg, &rc));
                 } else {
                     let rc = rules.get("capital").map(|r| r.2.clone()).unwrap_or_else(|| "R_CAPITAL".into());
-                    elims.push(capital_elimination(&sub_equity, inv, kn.ownership, &cfg, &rc));
+                    elims.push(capital_elimination(&sub_equity, inv, own, &cfg, &rc));
                 }
             }
             // —— 少数股东损益:凡持股 <100% 的全额合并子公司都要分摊(与是否资本抵销解耦) ——
-            // 少数股东损益 = (1−p) × 子净利润;净利润(自然) = −Σ(损益科目 借方正)。
+            // 少数股东损益 = (1−p) × 子净利润;净利润(自然) = −Σ(损益科目 借方正)。p=有效持股(O6)。
             let pl_sum: Decimal = child_bal
                 .iter()
                 .filter(|(a, _)| {
@@ -705,7 +777,7 @@ pub async fn run_consolidation(scheme: &str, period: &str) -> Result<Value> {
                 .sum();
             let net_profit = -pl_sum;
             let rc2 = rules.get("nci").map(|r| r.2.clone()).unwrap_or_else(|| "R_NCI".into());
-            if let Some(e) = minority_pl(net_profit, kn.ownership, &cfg, &rc2) {
+            if let Some(e) = minority_pl(net_profit, own, &cfg, &rc2) {
                 elims.push(e);
             }
         }
@@ -846,6 +918,14 @@ pub async fn run_consolidation(scheme: &str, period: &str) -> Result<Value> {
                     }
                 }
                 _ => {}
+            }
+        }
+
+        // ⑦ O1 净投资套期(本节点):有效部分重分类至 CTA(OCI)对冲折算差额。进"调整"栏。
+        if let Some((hedge_acc, eff_amt)) = hedge.get(&node.code) {
+            let rc = rules.get("net_investment_hedge").map(|r| r.2.clone()).unwrap_or_else(|| "R_NIH".into());
+            if let Some(e) = net_investment_hedge(*eff_amt, &fx.cta_account, hedge_acc, &rc) {
+                adjusts.push(e);
             }
         }
 

@@ -25,6 +25,7 @@ const state = {
   worksheet: [], // [{account_code, individual, adjust, elim, consolidated}]
   journal: [], // [{doc_no,line_no,elim_type,account_code,dr,cr,partner,is_opening,source_rule}]
   recon: [], // [{entity_a,entity_b,ic_type,a_amount,b_amount,matched,diff,recon_status}]
+  icSuggest: [], // O3 自动 IC 调整建议 [{entity_a,entity_b,ic_type,a_amount,b_amount,diff,suggestion,adjust_entity,adjust_amount}]
   scopeChange: [], // [{org_code,org_name,change_type,curr_method,prev_method,curr_ownership,prev_ownership,prev_period}]
   statements: [], // [{code,name}] 合并四表清单
   stmtSel: '', // 当前预览的报表码
@@ -53,6 +54,7 @@ const ELIM_LABEL = {
   equity_method: '权益法确认', goodwill_impair: '商誉减值',
   step_acquisition: '分步取得重估', disposal_equity_txn: '处置·权益交易', disposal_loss_control: '处置·丧失控制损益',
   fixed_asset_profit: '固定资产未实现利润', fixed_asset_depreciation: '固定资产折旧转回', dividend: '内部股利抵销',
+  net_investment_hedge: '净投资套期',
 }
 
 const SCOPE_BADGE = {
@@ -133,7 +135,7 @@ async function loadScheme (scheme, doRefresh = true) {
   state.periods = []
   state.nodes = []
   state.nodeTree = []
-  state.worksheet = []; state.journal = []; state.recon = []
+  state.worksheet = []; state.journal = []; state.recon = []; state.icSuggest = []
   try {
     const [p, a] = await Promise.all([
       apiJson(`/api/consol/periods?scheme=${enc(scheme)}`),
@@ -155,7 +157,7 @@ async function loadScheme (scheme, doRefresh = true) {
 async function loadPeriod (period, doRefresh = true) {
   state.selectedPeriod = period
   state.nodes = []; state.nodeTree = []
-  state.worksheet = []; state.journal = []; state.recon = []
+  state.worksheet = []; state.journal = []; state.recon = []; state.icSuggest = []
   try {
     const d = await apiJson(`/api/consol/nodes?scheme=${enc(state.selectedScheme)}&period=${enc(period)}`)
     state.nodes = normalizeArray(d.nodes)
@@ -180,12 +182,14 @@ async function loadNode (doRefresh = true) {
       apiJson(`/api/consol/journal?scheme=${enc(s)}&period=${enc(p)}&node=${enc(n)}`),
       apiJson(`/api/consol/ic-recon?scheme=${enc(s)}&period=${enc(p)}`),
       apiJson(`/api/consol/scope-change?scheme=${enc(s)}&period=${enc(p)}`),
+      apiJson(`/api/consol/ic-adjustment-suggestions?scheme=${enc(s)}&period=${enc(p)}`),
     ]
-    const [ws, jn, rc, sc] = await Promise.all(tasks)
+    const [ws, jn, rc, sc, ia] = await Promise.all(tasks)
     state.worksheet = normalizeArray(ws.rows)
     state.journal = normalizeArray(jn.entries)
     state.recon = normalizeArray(rc.rows)
     state.scopeChange = normalizeArray(sc.rows)
+    state.icSuggest = normalizeArray(ia.suggestions)
   } catch (err) {
     state.message = '底稿/分类账加载失败：' + (err.message || err)
   }
@@ -592,6 +596,31 @@ function reconTable () {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
+  </div>${icSuggestPanel()}`
+}
+
+// O3 自动 IC 调整建议:读差异行,给出「谁调、调多少」的可执行建议。
+function icSuggestPanel () {
+  if (!state.icSuggest || !state.icSuggest.length) return ''
+  const rows = state.icSuggest.map((r) => `<tr>
+    <td><b>${esc(r.entity_a)}</b> ↔ <b>${esc(r.entity_b)}</b></td>
+    <td class="cg-mid">${esc(ELIM_LABEL[r.ic_type] || r.ic_type)}</td>
+    <td class="cg-amt neg">${fmt(num(r.diff))}</td>
+    <td class="cg-mid"><span class="cg-badge" style="--c:#fb8c00">调整 ${esc(r.adjust_entity)}</span></td>
+    <td class="cg-amt">${fmt(num(r.adjust_amount))}</td>
+    <td>${esc(r.suggestion || '')}</td>
+  </tr>`).join('')
+  return `<div class="cg-suggest">
+    <div class="cg-suggest-hd"><ui5-icon name="lightbulb"></ui5-icon> 自动调整建议(O3 · 差异 ${state.icSuggest.length} 项)</div>
+    <div class="cg-table-wrap">
+      <table class="cg-table">
+        <thead><tr>
+          <th>往来对</th><th class="cg-mid-h">类型</th><th class="cg-amt-h">差异(A−B)</th>
+          <th class="cg-mid-h">建议</th><th class="cg-amt-h">调整额</th><th>说明</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
   </div>`
 }
 
@@ -983,6 +1012,10 @@ function styleCss () {
   .cg-journal .doc-start td { border-top: 1px solid var(--sapList_BorderColor, #d6dee6); }
   .cg-doc { font-weight: 700; font-family: monospace; font-size: 11.5px; white-space: nowrap; }
   .row-diff { background: color-mix(in srgb, var(--sapNegativeColor, #d32030) 8%, transparent); }
+  .cg-suggest { margin-top: 14px; }
+  .cg-suggest-hd { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700;
+    color: var(--sapContent_IconColor, #0a6ed1); margin-bottom: 8px; }
+  .cg-suggest-hd ui5-icon { width: 16px; height: 16px; color: #fb8c00; }
 
   /* property */
   .cg-prop { padding: 14px; gap: 2px; overflow: auto; }

@@ -292,6 +292,44 @@ pub async fn upsert_cash_flow_items(b: &Value) -> Result<Value> {
     Ok(json!({ "ok": true, "saved": items.len() }))
 }
 
+/// O1 净投资套期(批量)。唯一键 (scheme,period,node_code)。
+pub async fn upsert_net_investment_hedge(b: &Value) -> Result<Value> {
+    let items = arr(b);
+    for (i, it) in items.iter().enumerate() {
+        execute(
+            "INSERT INTO cg_net_investment_hedge (id, code, name, scheme_code, period_code, node_code, hedge_instrument_account, effective_amount, sort_no, status, create_time, update_time) \
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) \
+             ON CONFLICT (scheme_code, period_code, node_code) DO UPDATE SET hedge_instrument_account=EXCLUDED.hedge_instrument_account, effective_amount=EXCLUDED.effective_amount, update_time=CURRENT_TIMESTAMP",
+            vec![
+                pk(),
+                DataValue::String(format!("{}|{}|{}", s(it,"schemeCode").unwrap_or_default(), s(it,"periodCode").unwrap_or_default(), s(it,"nodeCode").unwrap_or_default())),
+                dvs(it, "name"), dvs_req(it, "schemeCode"), dvs_req(it, "periodCode"),
+                dvs_req(it, "nodeCode"), dvs(it, "hedgeInstrumentAccount"), dvdec(it, "effectiveAmount"), dvi(it, "sortNo", i as i64),
+            ],
+        ).await?;
+    }
+    Ok(json!({ "ok": true, "saved": items.len() }))
+}
+
+/// O2 商誉减值测试 CGU(批量)。唯一键 (scheme,period,node_code)。
+pub async fn upsert_goodwill_cgu(b: &Value) -> Result<Value> {
+    let items = arr(b);
+    for (i, it) in items.iter().enumerate() {
+        execute(
+            "INSERT INTO cg_goodwill_cgu (id, code, name, scheme_code, period_code, node_code, carrying_amount, recoverable_amount, goodwill_carrying, sort_no, status, create_time, update_time) \
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) \
+             ON CONFLICT (scheme_code, period_code, node_code) DO UPDATE SET carrying_amount=EXCLUDED.carrying_amount, recoverable_amount=EXCLUDED.recoverable_amount, goodwill_carrying=EXCLUDED.goodwill_carrying, update_time=CURRENT_TIMESTAMP",
+            vec![
+                pk(),
+                DataValue::String(format!("{}|{}|{}", s(it,"schemeCode").unwrap_or_default(), s(it,"periodCode").unwrap_or_default(), s(it,"nodeCode").unwrap_or_default())),
+                dvs(it, "name"), dvs_req(it, "schemeCode"), dvs_req(it, "periodCode"),
+                dvs_req(it, "nodeCode"), dvdec(it, "carryingAmount"), dvdec(it, "recoverableAmount"), dvdec(it, "goodwillCarrying"), dvi(it, "sortNo", i as i64),
+            ],
+        ).await?;
+    }
+    Ok(json!({ "ok": true, "saved": items.len() }))
+}
+
 /// L3 固定资产内部交易未实现利润(批量)。唯一键 (scheme,period,seller,buyer)。
 pub async fn upsert_fa_profit(b: &Value) -> Result<Value> {
     let items = arr(b);
