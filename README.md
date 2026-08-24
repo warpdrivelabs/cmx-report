@@ -99,8 +99,8 @@ cmx-container/                             （保留）
 
 | 文件 | 作用 |
 |---|---|
-| `.env` | 环境变量。`dotenvy` 在启动最前读 cwd 的 `.env`。关键项：`CONFIG_FILE="./report-server.toml"`、`RPT_PORT`、`RPT_PG_URL` |
-| `report-server.toml` | 主配置（`CONFIG_FILE` 指向）：`host`/`port`/`log_dir`/`log_level`（chassis 框架级）+ `[datasource] rpt_pg_url`（→ `RPT_PG_URL`） |
+| `.env` | 环境变量。`dotenvy` 在启动最前读 cwd 的 `.env`。关键项：`CONFIG_FILE="./report-server.toml"`（env 只做覆盖：框架键 `SERVER__*`、业务键 `AUTH__*` 族） |
+| `report-server.toml` | 主配置（`CONFIG_FILE` 指向）：`[server]`（chassis 框架级）+ `[[databases]]`（数据源，db_id=`fico-db`，缺段启动失败）+ `[assets]`（页面投递目录） |
 
 配置装配统一走 `ConfigManager`（与 flow/portal/mdm 同一制度：`CONFIG_FILE` toml + env → 全局 ConfigManager）。
 
@@ -118,7 +118,7 @@ cmx-report/
 │   └── cmx-rpt-server/           # 薄 bin：report banner + 大盘 + 数据源钩子
 ├── report.sh                     # 统一启动脚本
 ├── report-server.toml            # 主配置（CONFIG_FILE 指向）
-├── .env                          # 环境变量（CONFIG_FILE / RPT_PORT / RPT_PG_URL）
+├── .env                          # 环境变量（CONFIG_FILE 等；env 只做覆盖）
 ├── .cargo/config.toml            # aliyun 镜像 + nora registry 定义（跨 ws 解析所需）
 ├── Cargo.toml                    # workspace 定义（5 成员 + 跨 ws path 依赖）
 └── Cargo.lock                    # 锁定依赖（可复现构建）

@@ -40,6 +40,3 @@ dotenvy = { workspace = true }
 anyhow = { workspace = true }
 # 日志（钩子内 tracing::info）
 tracing = { workspace = true }
-# 数据源 toml 配置段解析（[datasource] → set_var 注入 RPT_PG_URL）
-toml = { workspace = true }
-serde = { workspace = true }

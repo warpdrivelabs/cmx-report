@@ -907,6 +907,7 @@ dependencies = [
  "cmx-rpt-model",
  "cmx-rpt-store-pg",
  "cmx-traits",
+ "cmx-utils",
  "serde",
  "serde_json",
  "tracing",
@@ -947,9 +948,7 @@ dependencies = [
  "cmx-web-chassis",
  "cmx-web-monitor",
  "dotenvy",
- "serde",
  "tokio",
- "toml 0.8.23",
  "tracing",
 ]
 

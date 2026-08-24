@@ -10,7 +10,9 @@
 //!   - `POST /native-pages/batch`    → ApiResp<{items:[NativePageFull]}>  批量取源码（body:{ids:[]}）
 //!   - `GET  /native-pages`          → ApiResp<{items,total,page,pageSize}> 分页列表（不含源码）
 //! rev = xxhash64(source_bytes, 0) → 16-hex（字节对齐门户 cmx-jsonstore::content_rev）。
-//! 页面目录由 env `RPT_UI_DIR` 指定，默认 `web/ui-native`（相对 report-server cwd，即 cmx-report/）。
+//! 页面目录走统一 [assets] 段（ConfigManager，toml ← env 合并）：`assets.ui_native_dir` /
+//! `assets.ui_html_dir`，默认 `web/ui-native` / `web/ui-html`（相对 report-server cwd，即 cmx-report/）；
+//! env 直读兜底 `ASSETS__UI_NATIVE_DIR` / `ASSETS__UI_HTML_DIR`。
 
 use std::path::PathBuf;
 
@@ -54,10 +56,28 @@ struct IndexFile {
     pages: Vec<IndexEntry>,
 }
 
-/// UI 目录（env `RPT_UI_DIR`，默认 `web/ui-native`）。
+/// 解析页面资产目录（统一 [assets] 段）：ConfigManager（toml ← env 合并）→ env 直读兜底 → 默认。
+fn assets_dir(cfg_key: &str, env_key: &str, default: &str) -> PathBuf {
+    if let Some(cm) = cmx_utils::ConfigManager::try_global()
+        && let Ok(v) = cm.get_string(cfg_key)
+    {
+        let v = v.trim();
+        if !v.is_empty() {
+            return PathBuf::from(v);
+        }
+    }
+    if let Ok(v) = std::env::var(env_key) {
+        let v = v.trim();
+        if !v.is_empty() {
+            return PathBuf::from(v);
+        }
+    }
+    PathBuf::from(default)
+}
+
+/// UI 目录（`assets.ui_native_dir`，默认 `web/ui-native`）。
 fn ui_dir() -> PathBuf {
-    let d = std::env::var("RPT_UI_DIR").unwrap_or_else(|_| "web/ui-native".to_string());
-    PathBuf::from(d)
+    assets_dir("assets.ui_native_dir", "ASSETS__UI_NATIVE_DIR", "web/ui-native")
 }
 
 /// 读页面索引（`<ui_dir>/index.json`）。失败 → 空集（对齐降级哲学，绝不 500 整个服务）。
@@ -185,13 +205,12 @@ where
 // ----------------------------------------------------------------------------
 // 门户 html 页与 native 页并列 API-backed，但存储更丰富：id 为 domain.app.module.page 命名空间，
 // 单页响应字段 = {id,name,details,domain,app,module,doc,relPath,rev,html}，rev=xxhash64(html)。
-// 报表拥有 fi.cmxfico.gl.rpt-designer-* / rpt-spreadjs-designer-* 共 8 页。目录 env RPT_UI_HTML_DIR
+// 报表拥有 fi.cmxfico.gl.rpt-designer-* / rpt-spreadjs-designer-* 共 8 页。目录 `assets.ui_html_dir`
 // 默认 web/ui-html。信封字节对齐门户 cmx-form/pages/html.rs::read_full_from_row。
 // ============================================================================
 
 fn html_dir() -> PathBuf {
-    let d = std::env::var("RPT_UI_HTML_DIR").unwrap_or_else(|_| "web/ui-html".to_string());
-    PathBuf::from(d)
+    assets_dir("assets.ui_html_dir", "ASSETS__UI_HTML_DIR", "web/ui-html")
 }
 
 #[derive(Debug, Clone, Deserialize)]
