@@ -17,6 +17,9 @@ path = "src/main.rs"
 [dependencies]
 # 平台中立核（全部 handler + report_routes::<S>() + 监控大盘）
 cmx-rpt-app = { workspace = true }
+# 页面只读投递（native+html 通用路由装配；错误类型取 cmx_api_types::Error）
+cmx-form = { workspace = true }
+cmx-api-types = { workspace = true }
 # 报表数据源 id 常量 RPT_DB_ID（数据源注册钩子对齐，否则 store 全局查询找不到源）
 cmx-rpt-model = { workspace = true }
 # 通用 HTTP 服务骨架（配置/日志/中间件/优雅关闭/banner + ServiceSpec/run）

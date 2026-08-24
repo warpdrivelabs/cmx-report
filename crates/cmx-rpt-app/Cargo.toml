@@ -31,11 +31,13 @@ cmx-api-types = { workspace = true }
 cmx-traits = { workspace = true }
 # 配置中台（ConfigManager）：页面资产目录 assets_ui_* 直读（toml ← env 合并）
 cmx-utils = { workspace = true }
+# 页面只读投递（native/html-pages 通用路由，替代原 native_pages.rs；信封直用 cmx-api-types）
+cmx-form = { workspace = true }
 
 # Web 框架（handler 提取器 + Router；信封借 cmx-api-types 不借 cmx-api）
 axum = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-# native page rev 内容哈希（xxhash64→16hex，字节对齐门户 cmx-jsonstore::content_rev）
-xxhash-rust = { workspace = true }
+# [unused] native_pages 已收编至 cmx-form::serve（rev 计算在 cmx-form 内）
+# xxhash-rust = { workspace = true }

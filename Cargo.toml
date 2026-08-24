@@ -55,6 +55,8 @@ cmx-biz = { path = "../cmx-container/crates/libs/cmx-biz", version = "0.1.12" }
 # API 通用类型（Error/Result/ApiResp 信封——report store + app 共用，与平台字节对齐）
 # 注：cmx-api 拆分重构后（cmx-api-core-split）本 crate 从 crates/libs/ 移入 crates/libs/cmx-apis/。
 cmx-api-types = { path = "../cmx-container/crates/libs/cmx-apis/cmx-api-types", version = "0.1.12" }
+# 页面只读投递（native/html-pages 六端点通用路由，收编原 cmx-rpt-app native_pages.rs）
+cmx-form = { path = "../cmx-container/crates/libs/cmx-form", version = "0.1.12" }
 # 异步任务中心内核（RptComputeJob/RptVerifyJob 实现 JobHandler + inventory 注册；语义中立无 cmx-api）
 cmx-job-core = { path = "../cmx-container/crates/libs/cmx-job/cmx-job-core", version = "0.1.12" }
 # 特征定义（auth::context_scope：apply_ops 取当前办理人身份，task_local 与平台并行同源）

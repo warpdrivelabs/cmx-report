@@ -840,6 +840,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmx-form"
+version = "0.1.12"
+dependencies = [
+ "axum",
+ "chrono",
+ "cmx-api-types",
+ "cmx-jsonstore",
+ "cmx-utils",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "cmx-job-core"
 version = "0.1.12"
 dependencies = [
@@ -903,6 +919,7 @@ dependencies = [
  "axum",
  "cmx-api-types",
  "cmx-consol-store-pg",
+ "cmx-form",
  "cmx-rpt-formula",
  "cmx-rpt-model",
  "cmx-rpt-store-pg",
@@ -911,7 +928,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
- "xxhash-rust",
 ]
 
 [[package]]
@@ -941,7 +957,9 @@ version = "0.1.12"
 dependencies = [
  "anyhow",
  "axum",
+ "cmx-api-types",
  "cmx-database-pg",
+ "cmx-form",
  "cmx-rpt-app",
  "cmx-rpt-model",
  "cmx-service-base",

@@ -11,7 +11,6 @@
 
 pub mod dashboard;
 pub mod handlers;
-pub mod native_pages;
 
 use axum::Router;
 use axum::routing::{get, post};
