@@ -5,7 +5,8 @@
 #
 # 数据源段（[datasource]）由 report-server main.rs 的 apply_toml_env() 读出并注入 RPT_PG_URL 环境变量。
 
-# —— chassis 框架级 ——
+# —— chassis 框架级（[server] 段，与门户 dev.toml 统一形态；旧顶层散字段仍兼容）——
+[server]
 host = "0.0.0.0"
 port = 8092
 log_dir = "logs"
