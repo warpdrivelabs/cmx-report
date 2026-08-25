@@ -94,9 +94,6 @@ pub(crate) fn dv_dec(r: &Value, k: &str) -> Decimal {
         _ => Decimal::ZERO,
     }
 }
-fn s_body(b: &Value, k: &str) -> String {
-    b.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string()
-}
 
 // ============================================================================
 // 装载
@@ -1307,8 +1304,4 @@ pub async fn list_accounts(scheme: &str) -> Result<Value> {
     )
     .await?;
     Ok(json!({ "scheme": scheme, "count": rows.len(), "accounts": rows }))
-}
-
-pub(crate) fn body_s(b: &Value, k: &str) -> String {
-    s_body(b, k)
 }
