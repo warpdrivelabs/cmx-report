@@ -19,7 +19,7 @@ graceful_timeout_secs = 10
 db_id = "fico-db"
 db_name = "报表平台库"
 db_type = "postgres"
-db_url = "postgres://postgres:postgres@127.0.0.1:5432/fico"
+db_url = "postgres://postgres:postgres@127.0.0.1:5433/fico"
 default = true
 
 # —— 页面资产（[assets] 段：引擎自持 native/html 页面投递目录；env 覆盖 ASSETS__UI_NATIVE_DIR/ASSETS__UI_HTML_DIR）——
