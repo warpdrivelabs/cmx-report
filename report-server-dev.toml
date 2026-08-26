@@ -1,0 +1,28 @@
+# cmx-rpt-server 实际配置（独立报表平台微服务模式）。
+#
+# 加载顺序：本文件（路径由 CONFIG_FILE 指定，或默认 ./report-server.toml）→ 环境变量覆盖。
+# 环境变量优先级最高（[server] 框架键覆盖 SERVER__*，与 ConfigManager `__` 约定同名；业务键见各段注释）。
+#
+# 数据源走标准 [[databases]] 段（BaseConfig 直读）；认证走 [auth] 段（ConfigManager 直读）。
+
+# —— chassis 框架级（[server] 段，与门户 dev.toml 统一形态；旧顶层散字段已废弃不生效）——
+[server]
+host = "0.0.0.0"
+port = 8092
+log_dir = "logs"
+log_level = "info"
+graceful_timeout_secs = 10
+
+# —— 数据源（标准 [[databases]] 段；BaseConfig 直读，db_id 固定 = RPT_DB_ID = "fico-db"）——
+# 报表数据字典物理表 cr_*（版式/单元格/浮动/来源绑定）全在 fico 库；缺段启动失败（无 URL 兜底）。
+[[databases]]
+db_id = "fico-db"
+db_name = "报表平台库"
+db_type = "postgres"
+db_url = "postgres://dbuser_dba:9lWsRQY4i4VToPpkHcCRFzki@192.168.1.14:5432/cmx_fico"
+#db_url = "postgres://postgres:postgres@192.168.1.100:5433/fico"default = true
+
+# —— 页面资产（[assets] 段：引擎自持 native/html 页面投递目录；env 覆盖 ASSETS__UI_NATIVE_DIR/ASSETS__UI_HTML_DIR）——
+[assets]
+ui_native_dir = "../cmx-container/assets/report/web/ui-native"
+ui_html_dir = "../cmx-container/assets/report/web/ui-html"
