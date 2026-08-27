@@ -106,16 +106,14 @@ async fn main() -> cmx_web_chassis::Result<()> {
             Box::pin(async {
                 let base = cmx_service_base::BaseConfig::from_config_manager()
                     .map_err(|e| anyhow::anyhow!("读取 [[databases]] 配置失败: {e}"))?;
-                if base.databases.is_empty() {
-                    return Err(anyhow::anyhow!(
-                        "report-server.toml 未配置 [[databases]]（需 db_id=\"{RPT_DB_ID}\" 且 default=true 的库）"
-                    ));
-                }
-                if !base.databases.iter().any(|d| d.db_id == RPT_DB_ID) {
-                    return Err(anyhow::anyhow!(
-                        "[[databases]] 缺少 db_id=\"{RPT_DB_ID}\"（报表 store 全局查询按该 db_id 寻址）"
-                    ));
-                }
+                cmx_service_base::validate_databases(
+                    &base.databases,
+                    &cmx_service_base::DatasourceRules {
+                        required_db_ids: &[RPT_DB_ID],
+                        ..Default::default()
+                    },
+                )
+                .map_err(|e| anyhow::anyhow!("数据源校验失败（需 db_id=\"{RPT_DB_ID}\"，报表 store 全局查询按该 db_id 寻址）: {e}"))?;
                 let ids: Vec<&str> = base.databases.iter().map(|d| d.db_id.as_str()).collect();
                 cmx_service_base::register_pg_datasources(&base.databases)
                     .await
