@@ -4859,7 +4859,7 @@ async function rcOpenDialog (reportCode, root) {
         await apiJson(`/api/report-source-bindings/id/${encodeURIComponent(delId)}`, { method: 'DELETE' })
         await loadList()
       } catch (err) {
-        alert(`删除失败：${err?.message || String(err)}`)
+        showCmxToast(`删除失败：${err?.message || String(err)}`, { level: 'error' })
       }
     }
   })
@@ -4944,7 +4944,7 @@ function rcOpenForm (init, onSaved) {
       close()
       await onSaved()
     } catch (err) {
-      alert(`保存失败：${err?.message || String(err)}`)
+      showCmxToast(`保存失败：${err?.message || String(err)}`, { level: 'error' })
     }
   })
 }
