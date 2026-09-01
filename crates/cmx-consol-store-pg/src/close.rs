@@ -5,7 +5,7 @@
 //! `run_ic_reconciliation` / `run_consolidation` / `run_cashflow` / `run_equity_change` /
 //! `seed_consol_statements`,不重复实现算法。
 //!
-//! ★ flow 对接(env-gated):`FLOW_BASE_URL` 配了 → start 时经 [`crate::flow_client`] 起一个真
+//! ★ flow 对接(目录键 gated):`[service_rpc.services].flow` 配了 → start 时经 [`crate::flow_client`] 起一个真
 //!   cmx-flow 流程实例(采集/对账/合并/复核四节点,复核是人工 userTask 进门户待办中心),
 //!   实例 id 回填 `cg_close_run.flow_instance_id`;未配 → 纯服务内顺序编排(不起实例)。
 //!   无论是否对接 flow,服务内状态机都是关账的真相源(flow 只做人工审批与可视化编排)。
@@ -50,7 +50,7 @@ pub async fn start_close(scheme: &str, period: &str) -> Result<Value> {
 
     let run_code = run_code_of(scheme, period);
     // 起 flow 实例(env-gated;失败不阻断关账,仅记 warn)。
-    let fc = FlowClient::from_env();
+    let fc = FlowClient::from_config();
     let mut flow_instance_id: Option<String> = None;
     if fc.enabled() {
         match fc.start_close_instance(&run_code, scheme, period).await {

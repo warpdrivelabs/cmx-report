@@ -26,3 +26,19 @@ db_url = "postgres://dbuser_dba:9lWsRQY4i4VToPpkHcCRFzki@192.168.1.14:5432/cmx_f
 [assets]
 ui_native_dir = "../cmx-container/assets/report/web/ui-native"
 ui_html_dir = "../cmx-container/assets/report/web/ui-html"
+
+# ==================== 关账流程对接 ====================
+# （经 cmx-flow-sdk + 服务目录；flow 键未配 = 关账退化为服务内顺序编排，不起实例）
+[service_rpc]
+default_transport = "http"
+nacos_group = "DEFAULT_GROUP"
+timeout_ms = 30000
+retry_max = 1
+
+[service_rpc.services]
+flow = { url = "http://127.0.0.1:8091", discovery = "cmx-flow-server" }
+
+# 关账流程参数（原 FLOW_CLOSE_DEF_KEY / FLOW_USER 环境变量迁入）
+[consol.flow]
+definition_key = "consol_close"   # 关账流程定义 key
+initiator = "consol-close"        # 发起人身份（进 variables.initiator；旧 X-User 头在 flow jwt 模式下本就不生效）
