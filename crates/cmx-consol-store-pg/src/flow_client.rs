@@ -1,84 +1,98 @@
-//! flow_client —— 关账编排对接独立 cmx-flow-server 的**极薄 HTTP 客户端**(env-gated)。
+//! flow_client —— 关账编排对接独立 cmx-flow-server 的**契约 SDK 客户端**(目录键 gated)。
 //!
-//! ★ 零编译期 flow 依赖:本 crate 不引 cmx-flow-*,只用 reqwest 打 flow 的公开 HTTP API
-//!   (POST /api/instances 起实例、GET /api/instances/{id} 查状态)。对齐 cmx-flowengine 自身
-//!   S1/S6 的「运行时注入、编译期解耦」姿态——报表微服务与流程微服务各自独立部署。
+//! ★ 调用经 `cmx-flow-sdk`（路径常量 v1 + wire DTO）+ `cmx-service-rpc` 基座
+//!   （`[service_rpc.services].flow` 定位 url/服务发现 + 统一鉴权链 + 超时/重试/熔断）——
+//!   零编译期 flow 依赖,报表微服务与流程微服务各自独立部署。
 //!
-//! ★ 触发闸门:仅当环境变量 `FLOW_BASE_URL` 非空时才对接 flow;未配则 `enabled()==false`,
-//!   关账退化为纯服务内顺序编排(不起流程实例)。鉴权头 `X-API-Key`(FLOW_API_KEY)、
-//!   `X-User`(FLOW_USER,缺省 consol-close)、`X-Tenant`(FLOW_TENANT,缺省 default)。
+//! ★ 触发闸门:仅当服务目录配置了 `flow` 键(`[service_rpc.services.flow]`)才对接 flow;
+//!   未配则 `enabled()==false`,关账退化为纯服务内顺序编排(不起流程实例)。
+//!
+//! ★ 鉴权(行为变化,1b):旧版直设 `X-User`/`X-Tenant` 头——该二头**仅在 flow 的
+//!   `auth.mode=off` 时生效**(jwt 模式下被 X-API-Key 服务身份路径忽略,实测为无效头);
+//!   现统一走基座鉴权链(`X-API-Key` + 委托令牌 + 请求 ID)。发起人身份经
+//!   `variables.initiator` 显式携带(原 `FLOW_USER` 语义,迁 `[consol.flow].initiator`)。
+//!
+//! ★ 成功判据(行为修正,1b):旧版仅判 `code != 1`(HTTP 200 + code=400 等会被误判成功);
+//!   现按标准信封严格判 `code == 0`。
 
-use serde_json::{Value, json};
+use cmx_flow_sdk::{BizLink, StartInstanceReq};
+use cmx_service_rpc::ServiceRpcError;
+use cmx_utils::ConfigManager;
 
-/// flow 对接配置(从环境变量读)。`base` 为空 → 关账不对接 flow。
+/// flow 对接配置。目录未配置 `flow` 键 → `enabled()==false`。
 pub struct FlowClient {
-    base: String,
-    /// 起实例的完整路径(独立 flow-server 为 /api/flow/instances;demo 为 /api/instances)。
-    instances_path: String,
-    api_key: Option<String>,
-    user: String,
-    tenant: String,
+    /// 关账流程定义 key(`consol.flow.definition_key`,缺省 consol_close)。
     definition_key: String,
+    /// 发起人身份(`consol.flow.initiator`,缺省 consol-close;进 variables.initiator)。
+    initiator: String,
 }
 
 impl FlowClient {
-    /// 从环境变量构造。`FLOW_BASE_URL` 空 → enabled()==false。
-    pub fn from_env() -> Self {
-        FlowClient {
-            base: std::env::var("FLOW_BASE_URL").unwrap_or_default().trim_end_matches('/').to_string(),
-            instances_path: std::env::var("FLOW_INSTANCES_PATH").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/api/flow/instances".into()),
-            api_key: std::env::var("FLOW_API_KEY").ok().filter(|s| !s.is_empty()),
-            user: std::env::var("FLOW_USER").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "consol-close".into()),
-            tenant: std::env::var("FLOW_TENANT").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "default".into()),
-            definition_key: std::env::var("FLOW_CLOSE_DEF_KEY").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "consol_close".into()),
+    /// 从服务配置构造(`[consol.flow]` 段;基座目录读全局单例)。
+    pub fn from_config() -> Self {
+        let mut cfg = Self {
+            definition_key: "consol_close".to_string(),
+            initiator: "consol-close".to_string(),
+        };
+        if let Some(cm) = ConfigManager::try_global() {
+            if let Ok(v) = cm.get_string("consol.flow.definition_key")
+                && !v.trim().is_empty()
+            {
+                cfg.definition_key = v.trim().to_string();
+            }
+            if let Ok(v) = cm.get_string("consol.flow.initiator")
+                && !v.trim().is_empty()
+            {
+                cfg.initiator = v.trim().to_string();
+            }
         }
+        cfg
     }
 
-    /// 是否对接 flow(FLOW_BASE_URL 已配)。
+    /// 是否对接 flow(服务目录已配置 flow 键)。
     pub fn enabled(&self) -> bool {
-        !self.base.is_empty()
-    }
-
-    fn apply_headers(&self, rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        let mut rb = rb.header("X-User", &self.user).header("X-Tenant", &self.tenant);
-        if let Some(k) = &self.api_key {
-            rb = rb.header("X-API-Key", k);
-        }
-        rb
+        cmx_service_rpc::global().is_some_and(|h| h.directory().contains("flow"))
     }
 
     /// 起一个关账流程实例,绑定 cg_close_run 单据(bizLink)。返回 flow 实例 id(失败返 Err)。
-    /// definitionKey=consol_close(可 FLOW_CLOSE_DEF_KEY 覆盖);businessKey=run_code。
-    pub async fn start_close_instance(&self, run_code: &str, scheme: &str, period: &str) -> Result<String, String> {
+    /// definitionKey=consol_close(可 `[consol.flow].definition_key` 覆盖);businessKey=run_code。
+    pub async fn start_close_instance(
+        &self,
+        run_code: &str,
+        scheme: &str,
+        period: &str,
+    ) -> Result<String, String> {
         if !self.enabled() {
-            return Err("flow 未启用(FLOW_BASE_URL 未配)".into());
+            return Err("flow 未启用([service_rpc.services.flow] 未配置)".into());
         }
-        let url = format!("{}{}", self.base, self.instances_path);
-        let body = json!({
-            "definitionKey": self.definition_key,
-            "businessKey": run_code,
-            "variables": { "scheme": scheme, "period": period, "initiator": self.user },
-            "bizLink": { "bizTable": "cg_close_run", "bizId": run_code, "bizKey": run_code, "role": "close_run" }
-        });
-        let client = reqwest::Client::new();
-        let resp = self
-            .apply_headers(client.post(&url).json(&body))
-            .send()
+        let client = cmx_flow_sdk::client().map_err(|e| e.to_string())?;
+        let resp = client
+            .start_instance(
+                StartInstanceReq {
+                    definition_key: self.definition_key.clone(),
+                    business_key: Some(run_code.to_string()),
+                    variables: Some(serde_json::json!({
+                        "scheme": scheme,
+                        "period": period,
+                        "initiator": self.initiator,
+                    })),
+                    biz_link: Some(BizLink {
+                        biz_table: "cg_close_run".to_string(),
+                        biz_id: run_code.to_string(),
+                        biz_key: Some(run_code.to_string()),
+                        role: "close_run".to_string(),
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
             .await
-            .map_err(|e| format!("flow 起实例请求失败: {e}"))?;
-        let status = resp.status();
-        let v: Value = resp.json().await.map_err(|e| format!("flow 响应解析失败: {e}"))?;
-        if !status.is_success() || v.get("code").and_then(|c| c.as_i64()) == Some(1) {
-            return Err(format!("flow 起实例被拒: {}", v.get("msg").and_then(|m| m.as_str()).unwrap_or("unknown")));
-        }
-        // 响应信封 { code, msg, data:{ instanceId | instance_id | id } }。
-        let data = v.get("data").cloned().unwrap_or(v);
-        let id = data
-            .get("instanceId")
-            .or_else(|| data.get("instance_id"))
-            .or_else(|| data.get("id"))
-            .and_then(|x| x.as_str().map(str::to_owned).or_else(|| x.as_i64().map(|n| n.to_string())))
-            .ok_or_else(|| "flow 响应缺 instanceId".to_string())?;
-        Ok(id)
+            .map_err(map_err)?;
+        Ok(resp.id)
     }
+}
+
+/// 错误文案对齐旧版口径("flow 起实例被拒: {msg}")。
+fn map_err(e: ServiceRpcError) -> String {
+    format!("flow 起实例被拒: {e}")
 }

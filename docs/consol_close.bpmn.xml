@@ -3,7 +3,7 @@
   合并关账编排流程(consol_close)—— cmx-report 关账编排对接 cmx-flow 的样例 BPMN 定义。
 
   用途:在 cmx-flow(独立 flow-server :8091)侧 publish 本定义后,cmx-report 的关账 start
-  (POST /api/consol/close/start,需配 FLOW_BASE_URL)会起一个本流程实例、绑定 cg_close_run 单据。
+  (POST /api/consol/close/start,需配 [service_rpc.services].flow)会起一个本流程实例、绑定 cg_close_run 单据。
   复核节点 review 是人工 userTask,进门户「待办中心」;办理后由业务侧回调 close/advance 推进。
 
   ★ 编译期解耦:cmx-report 不引 cmx-flow-*,只经 HTTP 起实例;本文件仅供 flow 侧导入,不硬绑。
