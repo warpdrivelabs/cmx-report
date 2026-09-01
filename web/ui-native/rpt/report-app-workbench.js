@@ -56,28 +56,14 @@ const PERIOD_TYPE_ICONS = {
 const RAINBOW = ['#e53935', '#fb8c00', '#43a047', '#00acc1', '#1e88e5', '#8e24aa', '#d98200']
 const UNKNOWN_COLOR = '#64748b'
 
-const esc = (s) => String(s ?? '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+const { escHtml: esc } = globalThis.__cmxDataComp // 共享转义（cmx-data-comp/lib/cmx-page-helpers.js；最严格五字符集合，文本/属性上下文皆安全）
 
 const enc = encodeURIComponent
 
 // 组织树视图 id —— 必须与 report-menu.json 的第二个 property view id 完全一致（激活联动靠它）。
 const PROP_ORG_VIEW_ID = 'rpt-app-workbench-prop-org'
 
-async function apiJson (url, options = {}) {
-  const res = await fetch(url, {
-    ...options,
-    headers: { Accept: 'application/json', ...(options.headers || {}) },
-    credentials: 'same-origin',
-  })
-  let j = null
-  try { j = await res.json() } catch {}
-  if (!res.ok || (j && typeof j.code === 'number' && j.code !== 0)) {
-    throw new Error((j && (j.msg || j.error)) || `HTTP ${res.status}`)
-  }
-  return j && typeof j === 'object' && 'data' in j ? j.data : j
-}
+const { apiJson } = globalThis.__cmxDataComp // 共享 fetch 封装（cmx-data-comp/lib/cmx-page-helpers.js；信封解包+结构化错误）
 
 function normalizeArray (v) {
   if (Array.isArray(v)) return v
@@ -453,26 +439,7 @@ function refreshAll () {
 }
 
 // 轻量 toast（占位操作/操作反馈用）。延后一帧挂载，避免被紧随的 refreshAll 重渲抹掉。
-function toast (message, kind = 'info') {
-  requestAnimationFrame(() => {
-    let host = null
-    for (const h of Array.from(state.hosts)) {
-      if (!h || !h.isConnected) continue
-      const root = h.renderRoot || h.shadowRoot?.querySelector('.native-page-root')
-      const sec = root?.querySelector?.('.rpt-content')
-      if (sec) { host = sec; break }
-    }
-    if (!host) return
-    if (getComputedStyle(host).position === 'static') host.style.position = 'relative'
-    let box = host.querySelector(':scope > .rpt-toast')
-    if (!box) { box = document.createElement('div'); box.className = 'rpt-toast'; host.appendChild(box) }
-    box.setAttribute('data-kind', kind)
-    box.textContent = message
-    box.classList.remove('show'); void box.offsetWidth; box.classList.add('show')
-    clearTimeout(box.__t)
-    box.__t = setTimeout(() => box.classList.remove('show'), 3200)
-  })
-}
+const { showCmxToast } = globalThis.__cmxDataComp // 共享 toast（cmx-data-comp/lib/cmx-toast.js；治理清单 B-05）
 
 function viewHtml (view) {
   if (view === 'explorer') return explorerHtml()
@@ -928,10 +895,10 @@ function bind (root) {
     if (btn.disabled) return
     const act = btn.getAttribute('data-batch')
     const codes = [...state.selectedCodes]
-    if (!codes.length) { toast('请先勾选报表', 'error'); return }
+    if (!codes.length) { showCmxToast('请先勾选报表', { level: 'error' }); return }
     const label = ({ compute: '计算', validate: '校验', 'check-report': '校验报告' })[act] || '操作'
     const ctx = [state.selectedOrg, state.selectedPeriod].filter(Boolean).join(' / ') || '未选组织/期间'
-    toast(`批量${label} ${codes.length} 张报表（${ctx}）—— 计算/校验引擎待接入`, 'info')
+    showCmxToast(`批量${label} ${codes.length} 张报表（${ctx}）—— 计算/校验引擎待接入`, { level: 'info' })
   }))
   root.querySelectorAll('[data-version]').forEach((sel) => sel.addEventListener('change', () => {
     const code = sel.getAttribute('data-version')
@@ -956,7 +923,7 @@ function bind (root) {
     const label = ({ compute: '计算报表', validate: '校验报表', 'check-report': '校验报告' })[act] || '操作'
     const ctx = [state.selectedOrg, state.selectedPeriod].filter(Boolean).join(' / ') || '未选组织/期间'
     refreshAll()
-    toast(`${label}「${r?.name || code}」（${ctx}）—— 计算/校验引擎待接入`, 'info')
+    showCmxToast(`${label}「${r?.name || code}」（${ctx}）—— 计算/校验引擎待接入`, { level: 'info' })
   }))
 }
 

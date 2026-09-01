@@ -34,32 +34,9 @@ const FORMAT_SHORT = {
   integer: '整数',
 }
 
-const esc = (s) => String(s ?? '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+const { escHtml: esc } = globalThis.__cmxDataComp // 共享转义（cmx-data-comp/lib/cmx-page-helpers.js；最严格五字符集合，文本/属性上下文皆安全）
 
-async function apiJson (url, options = {}) {
-  const res = await fetch(url, {
-    ...options,
-    headers: { Accept: 'application/json', ...(options.headers || {}) },
-    credentials: 'same-origin',
-  })
-  let j = null
-  try { j = await res.json() } catch {}
-  if (!res.ok || (j && typeof j.code === 'number' && j.code !== 0)) {
-    // 结构化抛错：对齐 cmx-doc-source 的错误契约，供 presentDocError 分 conflict/validation/generic 三态。
-    const err = new Error((j && (j.msg || j.error)) || `HTTP ${res.status}`)
-    if (j && j.code != null) err.code = j.code
-    // 乐观锁冲突（后端保留裸 409）：res.status===409 或信封 code===409。
-    if (res.status === 409 || (j && j.code === 409)) err.conflict = true
-    // 列级校验明细（门户拦截器已把 data.violations 平铺/透传）：结构化逐行展示。
-    const vio = (j && (Array.isArray(j.violations) ? j.violations
-      : (j.data && Array.isArray(j.data.violations) ? j.data.violations : null)))
-    if (vio && vio.length) { err.violations = vio; err.validation = true }
-    throw err
-  }
-  return j && typeof j === 'object' && 'data' in j ? j.data : j
-}
+const { apiJson } = globalThis.__cmxDataComp // 共享 fetch 封装（cmx-data-comp/lib/cmx-page-helpers.js；信封解包+结构化错误）
 
 function propsOf (ctx) {
   const p = ctx?.props || ctx?.host?.__props || {}
@@ -1752,7 +1729,7 @@ function bindPropertyPage (root, st, host, view) {
   // 透传到在屏 sheet 的表格命令（网格线/表头/可编辑/插入删除行列/清除）
   root.querySelectorAll('[data-sheet-cmd]').forEach((b) => b.addEventListener('click', () => {
     const sheet = live()
-    if (!sheet) { toast(root, '请先在设计区打开电子表格', 'error'); return }
+    if (!sheet) { showCmxToast('请先在设计区打开电子表格', { level: 'error' }); return }
     runSheetCommand(b.getAttribute('data-sheet-cmd') || '', sheet, st, root)
     rerender()
   }))
@@ -1784,7 +1761,7 @@ function bindPropertyPage (root, st, host, view) {
     const code = b.getAttribute('data-region-del')
     st.regions = (st.regions || []).filter((r) => r.code !== code)
     markDirty(st, true)
-    toast(root, `已删除区域 ${code}`, 'success')
+    showCmxToast(`已删除区域 ${code}`, { level: 'success' })
     rerender()
   }))
 
@@ -1807,7 +1784,7 @@ function bindPropertyPage (root, st, host, view) {
     markDirty(st, true)
     const addr = st.selectedCell || 'A1'
     emitCellMapOps(st, addr, st.cellMap[cellKey(st, addr)] || {}) // 协同 B 档：公式编辑走 Op 通道即时落库
-    toast(root, `已暂存 ${addr} 的公式映射（保存报表时落库）`, 'success')
+    showCmxToast(`已暂存 ${addr} 的公式映射（保存报表时落库）`, { level: 'success' })
   })
 
   // —— 函数向导 ——
@@ -1859,7 +1836,7 @@ function bindPropertyPage (root, st, host, view) {
       { sheet: sheetName, cell: addr }, { formula })
     rerender()
     renderBadges(st) // 计算/校验开关开着时，向导插入的公式即时反映到 content 徽标
-    toast(root, `已插入公式到 ${addr}：${formula}`, 'success')
+    showCmxToast(`已插入公式到 ${addr}：${formula}`, { level: 'success' })
   })
 
   // —— 元素绑定 / 填入 ——
@@ -1874,7 +1851,7 @@ function bindPropertyPage (root, st, host, view) {
     markDirty(st, true)
     // 协同 B 档：解绑即时走 Op 通道
     enqueueOp(st, 'unbindElement', { sheet: sheetName, cell: addr }, {})
-    toast(root, `已解除 ${addr} 的元素绑定`, 'success')
+    showCmxToast(`已解除 ${addr} 的元素绑定`, { level: 'success' })
     rerender()
     renderBadges(st) // 元素开关开着时，解绑即时反映到 content 徽标
   })
@@ -1888,8 +1865,8 @@ function addRegion (st, root) {
   const d = st.regionDraft || {}
   const name = String(d.name || '').trim()
   const range = String(d.range || '').trim().toUpperCase()
-  if (!name) { toast(root, '请填写区域名称', 'error'); return }
-  if (range && !expandRange(range)) { toast(root, '范围格式应为 A1:E10', 'error'); return }
+  if (!name) { showCmxToast('请填写区域名称', { level: 'error' }); return }
+  if (range && !expandRange(range)) { showCmxToast('范围格式应为 A1:E10', { level: 'error' }); return }
   const box = range ? expandRange(range) : null
   const code = `RG_${slug(name)}_${(st.regions || []).length + 1}`
   const startCell = box ? `${indexToCol(box.c1)}${box.r1 + 1}` : ''
@@ -1903,7 +1880,7 @@ function addRegion (st, root) {
   st.regions.push({ code, name, type: d.type || 'data', startCell, endCell, isDefault: false, sheetCode: currentSheetCode(st), isRepeatable, dataSource, floatTemplateRow })
   st.regionDraft = { name: '', type: 'data', range: '', isRepeatable: false, dataSource: '', floatTemplateRow: '' }
   markDirty(st, true)
-  toast(root, `已添加${isRepeatable ? '浮动' : ''}区域 ${name}${range ? ` (${range})` : ''}`, 'success')
+  showCmxToast(`已添加${isRepeatable ? '浮动' : ''}区域 ${name}${range ? ` (${range})` : ''}`, { level: 'success' })
   refreshInstance(st, (v) => v === 'propertyMeta')
 }
 
@@ -1916,18 +1893,18 @@ async function previewFloatRegion (st, root, regionCode) {
     })
     const regs = (data?.float?.regions) || []
     const reg = regs.find((r) => r.regionCode === regionCode) || regs[0]
-    if (!reg) { toast(root, '未展开出浮动内容（确认区域内有 row_type/col_type=float 模板行/列，且已保存）', 'error'); return }
+    if (!reg) { showCmxToast('未展开出浮动内容（确认区域内有 row_type/col_type=float 模板行/列，且已保存）', { level: 'error' }); return }
     if (reg.axis === 'col') {
       const cols = reg.colInstances || []
       const heads = cols.slice(0, 6).map((c) => c.header).join('、')
-      toast(root, `列浮动：展开 ${cols.length} 列（${heads}${cols.length > 6 ? '…' : ''}）`, 'success')
+      showCmxToast(`列浮动：展开 ${cols.length} 列（${heads}${cols.length > 6 ? '…' : ''}）`, { level: 'success' })
     } else {
       const insts = reg.instances || []
       const names = insts.slice(0, 5).map((i) => i.name).join('、')
-      toast(root, `行浮动：展开 ${insts.length} 行（${names}${insts.length > 5 ? '…' : ''}）`, 'success')
+      showCmxToast(`行浮动：展开 ${insts.length} 行（${names}${insts.length > 5 ? '…' : ''}）`, { level: 'success' })
     }
   } catch (e) {
-    toast(root, `预览失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    showCmxToast(`预览失败：${e instanceof Error ? e.message : String(e)}`, { level: 'error' })
   }
 }
 
@@ -1936,7 +1913,7 @@ function applyCellInput (st, root, kind, raw) {
   const sheet = liveSheetOf(st)
   const ws = sheet?.getWorkbook?.()?.getActiveSheet?.()
   const p = parseA1(st.selectedCell || 'A1')
-  if (!ws || !p) { toast(root, '请先在设计区选中单元格', 'error'); return }
+  if (!ws || !p) { showCmxToast('请先在设计区选中单元格', { level: 'error' }); return }
   const value = String(raw ?? '')
   const run = () => {
     if (kind === 'formula') {
@@ -1952,7 +1929,7 @@ function applyCellInput (st, root, kind, raw) {
   }
   if (sheet._runUndoable) sheet._runUndoable(kind === 'formula' ? 'cmxFormulaBarEdit' : 'editCell', run)
   else run()
-  toast(root, `已写入 ${st.selectedCell}`, 'success')
+  showCmxToast(`已写入 ${st.selectedCell}`, { level: 'success' })
   refreshInstance(st, (v) => v === 'propertyCell')
 }
 
@@ -1960,7 +1937,7 @@ function applyCellInput (st, root, kind, raw) {
 function bindElementToCell (st, root, code) {
   if (!code) return
   const el = st.elements.find((x) => String(x.code) === String(code))
-  if (!el) { toast(root, '未找到元素', 'error'); return }
+  if (!el) { showCmxToast('未找到元素', { level: 'error' }); return }
   const addr = st.selectedCell || 'A1'
   const sheetName = currentSheetCode(st)
   const cm = st.cellMap[cellKey(st, addr, sheetName)] = st.cellMap[cellKey(st, addr, sheetName)] || {}
@@ -1973,7 +1950,7 @@ function bindElementToCell (st, root, code) {
   markDirty(st, true)
   // 协同 B 档：绑定即时走 Op 通道
   enqueueOp(st, 'bindElement', { sheet: sheetName, cell: addr }, { elementCode: el.code })
-  toast(root, `已绑定 ${el.code} → ${addr}`, 'success')
+  showCmxToast(`已绑定 ${el.code} → ${addr}`, { level: 'success' })
   refreshInstance(st, (v) => v === 'propertyCell' || v === 'propertyElement')
   renderBadges(st) // 元素开关开着时，绑定元素即时反映到 content 徽标
 }
@@ -1981,7 +1958,7 @@ function bindElementToCell (st, root, code) {
 /** 把元素名称填入当前单元格（作为文本标签），并顺带绑定。 */
 function insertElementValue (st, root, code) {
   const el = st.elements.find((x) => String(x.code) === String(code))
-  if (!el) { toast(root, '未找到元素', 'error'); return }
+  if (!el) { showCmxToast('未找到元素', { level: 'error' }); return }
   applyCellInput(st, root, 'value', el.name || el.code)
   bindElementToCell(st, root, code)
 }
@@ -1999,7 +1976,7 @@ function bindElementToCellAddr (st, root, payload, addr) {
     p = el ? { code: el.code, name: el.name, dataType: el.data_type, valueSource: el.value_source, calcFormula: el.calc_formula, checkFormula: el.check_formula } : { code: payload }
   }
   const code = p?.code
-  if (!code) { toast(root, '无效的数据元素', 'error'); return false }
+  if (!code) { showCmxToast('无效的数据元素', { level: 'error' }); return false }
   const sheetName = currentSheetCode(st)
   const key = cellKey(st, addr, sheetName)
   const existed = !!st.cellMap[key]?.elementCode
@@ -2016,7 +1993,7 @@ function bindElementToCellAddr (st, root, payload, addr) {
   markDirty(st, true)
   // 协同 B 档：拖拽绑定即时走 Op 通道
   enqueueOp(st, 'bindElement', { sheet: sheetName, cell: addr }, { elementCode: code })
-  toast(root, `${existed ? '已覆盖绑定' : '已绑定'} ${code} → ${addr}`, 'success')
+  showCmxToast(`${existed ? '已覆盖绑定' : '已绑定'} ${code} → ${addr}`, { level: 'success' })
   refreshInstance(st, (v) => v === 'propertyCell' || v === 'propertyElement')
   renderBadges(st) // 拖拽绑定可能带入 calc/checkFormula → 徽标即时反映
   return true
@@ -2676,15 +2653,15 @@ async function presentRptError (root, err, action = 'save') {
     } catch { /* 对话框自身异常 → 落到 toast 兜底 */ }
   }
   const msg = String(err?.message || err)
-  toast(root, err?.conflict || msg.includes('409') || msg.includes('他人')
+  showCmxToast(err?.conflict || msg.includes('409') || msg.includes('他人')
     ? '版式已被他人更新，请刷新后重试'
-    : `保存失败：${msg}`, 'error')
+    : `保存失败：${msg}`, { level: 'error' })
   return null
 }
 
 async function saveLayout (sheet, st, root) {
   const wbJson = sheet.getWorkbookJson ? sheet.getWorkbookJson() : (sheet.getWorkbook?.()?.toJSON?.() || null)
-  if (!wbJson) { toast(root, '保存失败：工作簿未就绪', 'error'); return }
+  if (!wbJson) { showCmxToast('保存失败：工作簿未就绪', { level: 'error' }); return }
   // 缩放是会话级视图偏好，不随报表保存：剔除各 sheet 的 zoomFactor，令 BLOB 恒 100%。
   try { const shs = wbJson.sheets || {}; for (const n of Object.keys(shs)) { if (shs[n] && 'zoomFactor' in shs[n]) delete shs[n].zoomFactor } } catch (_) {}
   const proj = deriveProjection(sheet, st)
@@ -2699,7 +2676,7 @@ async function saveLayout (sheet, st, root) {
     })
     st.__contentHash = res?.contentHash || st.__contentHash
     markDirty(st, false) // 版式已保存 → 清除未保存标记
-    toast(root, '报表版式已保存', 'success')
+    showCmxToast('报表版式已保存', { level: 'success' })
     return true
   } catch (err) {
     // 对齐 DOC：专业对话框展示（唯一键冲突/校验/乐观锁），冲突确认后重载最新版。
@@ -2953,7 +2930,7 @@ function hydratePropsFromLayout (st, data) {
 
 /** 模式二 · 加载数据：POST data/query → 回填画布值（保留版式与公式） */
 async function loadReportData (sheet, st, root, orgCode, periodCode) {
-  if (!orgCode || !periodCode) { toast(root, '请先选择组织与期间', 'error'); return }
+  if (!orgCode || !periodCode) { showCmxToast('请先选择组织与期间', { level: 'error' }); return }
   try {
     const res = await apiJson(`/api/report-design/reports/${enc(st.props.reportCode)}/data/query`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2966,18 +2943,18 @@ async function loadReportData (sheet, st, root, orgCode, periodCode) {
       valuesMap[r.cellRef] = r.valueType === 'number' ? r.numValue : r.textValue
     }
     if (sheet.setCellValues) sheet.setCellValues(valuesMap)
-    toast(root, `已加载 ${cells.length} 个单元格数据`, 'success')
+    showCmxToast(`已加载 ${cells.length} 个单元格数据`, { level: 'success' })
   } catch (err) {
-    toast(root, `加载数据失败：${String(err?.message || err)}`, 'error')
+    showCmxToast(`加载数据失败：${String(err?.message || err)}`, { level: 'error' })
   }
 }
 
 /** 模式二 · 存数据：收集画布有值单元格 → POST data（按 org+period UPSERT cr_cell_data） */
 async function saveReportData (sheet, st, root, orgCode, periodCode) {
-  if (!orgCode || !periodCode) { toast(root, '请先选择组织与期间', 'error'); return }
+  if (!orgCode || !periodCode) { showCmxToast('请先选择组织与期间', { level: 'error' }); return }
   const wb = sheet.getWorkbook?.()
   const ws = wb?.getActiveSheet?.()
-  if (!ws) { toast(root, '保存失败：工作簿未就绪', 'error'); return }
+  if (!ws) { showCmxToast('保存失败：工作簿未就绪', { level: 'error' }); return }
   const sheetCode = ws.name ? ws.name() : 'Sheet1'
   const cells = []
   const rc = Math.min(ws.getRowCount ? ws.getRowCount() : 0, 500)
@@ -3004,7 +2981,7 @@ async function saveReportData (sheet, st, root, orgCode, periodCode) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ version: st.props.version || '', orgCode, periodCode, cells }),
     })
-    toast(root, `已保存 ${cells.length} 个单元格数据`, 'success')
+    showCmxToast(`已保存 ${cells.length} 个单元格数据`, { level: 'success' })
   } catch (err) {
     // 对齐 DOC：数据落库错误同样走专业对话框（唯一键/校验/乐观锁）。
     await presentRptError(root, err, 'save')
@@ -3014,27 +2991,7 @@ async function saveReportData (sheet, st, root, orgCode, periodCode) {
 
 
 /** 轻量 toast 提示（挂在当前视图 section 内，绝对定位，自动淡出）。 */
-function toast (root, message, kind = 'info') {
-  // 延后一帧：多数调用方会紧接着 refreshInstance 重渲染 root，先渲染再挂 toast 才不会被抹掉。
-  requestAnimationFrame(() => {
-    const host = root.querySelector('.rd-sheet-wrap') || root.querySelector('.rd') || root
-    if (!host) return
-    if (host.classList?.contains('rd') && getComputedStyle(host).position === 'static') host.style.position = 'relative'
-    let box = host.querySelector(':scope > .rd-toast')
-    if (!box) {
-      box = document.createElement('div')
-      box.className = 'rd-toast'
-      host.appendChild(box)
-    }
-    box.setAttribute('data-kind', kind)
-    box.textContent = message
-    box.classList.remove('show')
-    void box.offsetWidth
-    box.classList.add('show')
-    clearTimeout(box.__t)
-    box.__t = setTimeout(() => box.classList.remove('show'), 3200)
-  })
-}
+const { showCmxToast } = globalThis.__cmxDataComp // 共享 toast（cmx-data-comp/lib/cmx-toast.js；治理清单 B-05）
 
 function runSheetCommand (cmd, sheet, st, root) {
   const ui = st.sheetUi
@@ -3244,11 +3201,11 @@ function bindSheetToolbar (root, st) {
     reader.onload = () => {
       try {
         const json = JSON.parse(String(reader.result || '{}'))
-        if (sheet.setWorkbookJson) { sheet.setWorkbookJson(json); if (!st.__loading) markDirty(st, true); toast(root, '已导入报表版式(JSON)', 'success') }
-      } catch (err) { toast(root, `导入失败：${String(err?.message || err)}`, 'error') }
+        if (sheet.setWorkbookJson) { sheet.setWorkbookJson(json); if (!st.__loading) markDirty(st, true); showCmxToast('已导入报表版式(JSON)', { level: 'success' }) }
+      } catch (err) { showCmxToast(`导入失败：${String(err?.message || err)}`, { level: 'error' }) }
       jfile.value = ''
     }
-    reader.onerror = () => { toast(root, '文件读取失败', 'error'); jfile.value = '' }
+    reader.onerror = () => { showCmxToast('文件读取失败', { level: 'error' }); jfile.value = '' }
     reader.readAsText(f)
   })
   bindFormulaBar(root, st)
@@ -3280,7 +3237,7 @@ function bindFormulaBar (root, st) {
     if (!gotoCellOrRange(st, v)) {
       // 非法输入 → 还原为当前选区
       if (nb) nb.value = st.selectedRange || st.selectedCell || 'A1'
-      toast(root, '无效的单元格/区域地址（示例：B4 或 A1:C5）', 'error')
+      showCmxToast('无效的单元格/区域地址（示例：B4 或 A1:C5）', { level: 'error' })
       return
     }
     // 跳转成功后 onSelect 轮询会回填名称框/公式框；这里让焦点离开便于继续操作
@@ -3741,7 +3698,7 @@ function openFxEditor (root, st, anchorEl) {
 /** fx 组件提交：整条 DSL 表达式 → 画布公式(sanitize+撤销) + cellMap.calcFormula + 协同 Op。 */
 function onFxCommit (root, st, detail) {
   const expr = String(detail?.expr || '').trim().replace(/^=+/, '')
-  if (!expr) { toast(root, '表达式为空', 'error'); return }
+  if (!expr) { showCmxToast('表达式为空', { level: 'error' }); return }
   const addr = detail?.target || st.selectedCell || 'A1'
   const sheetName = currentSheetCode(st)
   if (addr !== st.selectedCell) { gotoCellOrRange(st, addr); st.selectedCell = addr }
@@ -3753,7 +3710,7 @@ function onFxCommit (root, st, detail) {
   markDirty(st, true)
   enqueueOp(st, 'setCellFormula', { sheet: sheetName, cell: addr }, { formula: expr })
   updateToolbarControls(root, st)
-  toast(root, `已写入 ${addr}：=${expr}`, 'success')
+  showCmxToast(`已写入 ${addr}：=${expr}`, { level: 'success' })
 }
 
 /** 打开面板：建 overlay + 载函数目录 + 渲染（非模态浮层）。 */
@@ -4038,7 +3995,7 @@ function insertFxFormula (root, st) {
   const fp = st.fxPanel
   if (!fp) return
   const expr = String(fp.expr || '').trim().replace(/^=+/, '') // 用户拼的整条表达式，去前导 =
-  if (!expr) { toast(root, '表达式为空', 'error'); return }
+  if (!expr) { showCmxToast('表达式为空', { level: 'error' }); return }
   const addr = fp.target || st.selectedCell || 'A1'
   const sheetName = currentSheetCode(st)
   // 目标格可能与当前选中不同 → 先跳过去，令后续写入命中对的格
@@ -4055,7 +4012,7 @@ function insertFxFormula (root, st) {
   enqueueOp(st, 'setCellFormula', { sheet: sheetName, cell: addr }, { formula: expr })
   closeFxPanel(root, st)
   updateToolbarControls(root, st)
-  toast(root, `已写入 ${addr}：=${expr}`, 'success')
+  showCmxToast(`已写入 ${addr}：=${expr}`, { level: 'success' })
 }
 
 /**
@@ -4132,7 +4089,7 @@ function setupBorderMenu (root, st, sheet) {
     if (!item) return
     const kind = item.getAttribute('data-border-kind') || 'all'
     const live = liveSheetOf(st) || sheet
-    if (!live) { toast(root, '请先在设计区打开电子表格', 'error'); return }
+    if (!live) { showCmxToast('请先在设计区打开电子表格', { level: 'error' }); return }
     live.applySelectionBorder?.(kind, st.borderColor || '#8a8f94', st.borderLineStyle || 'thin')
     if (!st.__loading) markDirty(st, true)
     close()
@@ -4171,7 +4128,7 @@ function setupColorMenus (root, st, sheet) {
   }
   const apply = (field, color) => {
     const live = liveSheetOf(st) || sheet
-    if (!live) { toast(root, '请先在设计区打开电子表格', 'error'); return }
+    if (!live) { showCmxToast('请先在设计区打开电子表格', { level: 'error' }); return }
     applySheetUiStyle(live, st, { [field]: color })
     if (!st.__loading) markDirty(st, true)
     updateToolbarControlsAll(st)
@@ -4577,7 +4534,7 @@ function bindElementDrop (root, sheet, st) {
     if (!isElementDrag(e.dataTransfer)) return
     e.preventDefault()
     const payload = parseDragElement(e.dataTransfer)
-    if (!payload) { toast(root, '未识别到拖拽的数据元素', 'error'); return }
+    if (!payload) { showCmxToast('未识别到拖拽的数据元素', { level: 'error' }); return }
     // 落点格解析只在 drop 时做一次
     const addr = cellAddrFromDrop(sheet, e.clientX, e.clientY) || st.selectedCell || 'A1'
     bindElementToCellAddr(st, root, payload, addr)

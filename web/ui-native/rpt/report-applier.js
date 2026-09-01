@@ -15,25 +15,11 @@
 const instances = new Map()
 const DEFAULT_REGION = '__default__'
 
-const esc = (s) => String(s ?? '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+const { escHtml: esc } = globalThis.__cmxDataComp // 共享转义（cmx-data-comp/lib/cmx-page-helpers.js；最严格五字符集合，文本/属性上下文皆安全）
 
 const enc = (s) => encodeURIComponent(String(s ?? ''))
 
-async function apiJson (url, options = {}) {
-  const res = await fetch(url, {
-    ...options,
-    headers: { Accept: 'application/json', ...(options.headers || {}) },
-    credentials: 'same-origin',
-  })
-  let j = null
-  try { j = await res.json() } catch {}
-  if (!res.ok || (j && typeof j.code === 'number' && j.code !== 0)) {
-    throw new Error((j && (j.msg || j.error)) || `HTTP ${res.status}`)
-  }
-  return j && typeof j === 'object' && 'data' in j ? j.data : j
-}
+const { apiJson } = globalThis.__cmxDataComp // 共享 fetch 封装（cmx-data-comp/lib/cmx-page-helpers.js；信封解包+结构化错误）
 
 function propsOf (ctx) {
   const p = ctx?.props || ctx?.host?.__props || {}
@@ -696,20 +682,7 @@ function viewHtml (view, st) {
 // toast
 // ============================================================================
 
-function toast (root, message, kind = 'info') {
-  requestAnimationFrame(() => {
-    const host = root.querySelector('.ra') || root
-    if (!host) return
-    if (getComputedStyle(host).position === 'static') host.style.position = 'relative'
-    let box = host.querySelector(':scope > .ra-toast')
-    if (!box) { box = document.createElement('div'); box.className = 'ra-toast'; host.appendChild(box) }
-    box.setAttribute('data-kind', kind)
-    box.textContent = message
-    box.classList.remove('show'); void box.offsetWidth; box.classList.add('show')
-    clearTimeout(box.__t)
-    box.__t = setTimeout(() => box.classList.remove('show'), 3200)
-  })
-}
+const { showCmxToast } = globalThis.__cmxDataComp // 共享 toast（cmx-data-comp/lib/cmx-toast.js；治理清单 B-05）
 
 // ============================================================================
 // 版式加载 + 数据取/存（复用后端端点，逻辑本地实现，不 import designer.js）
@@ -1034,7 +1007,7 @@ async function loadLayout (sheet, st, root) {
  *  silent=true（打开报表自动取数用）：不弹成功 toast、缺组织/期间时静默跳过（不算错误，骨架期常见）。 */
 async function loadData (sheet, st, root, silent = false) {
   const { orgCode, periodCode } = st.props
-  if (!orgCode || !periodCode) { if (!silent) toast(root, '缺少组织或期间上下文', 'error'); return }
+  if (!orgCode || !periodCode) { if (!silent) showCmxToast('缺少组织或期间上下文', { level: 'error' }); return }
   try {
     const res = await apiJson(`/api/report-design/reports/${enc(st.props.reportCode)}/data/query`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1045,10 +1018,10 @@ async function loadData (sheet, st, root, silent = false) {
     applyCellsToCanvas(sheet, st, cells) // 双路灌值（公式格 setReportValueMap 自动算 / 非公式格直填）
     setTimeout(() => { st.__loading = false }, 200)
     markDirty(st, false) // 取数=从DB装载，画布与DB一致，清除未保存标记
-    if (!silent) toast(root, `已装载 ${cells.length} 个单元格数据`, 'success')
+    if (!silent) showCmxToast(`已装载 ${cells.length} 个单元格数据`, { level: 'success' })
     refreshInstance(st, (v) => v === 'propertyStatus')
   } catch (err) {
-    if (!silent) toast(root, `取数失败：${String(err?.message || err)}`, 'error')
+    if (!silent) showCmxToast(`取数失败：${String(err?.message || err)}`, { level: 'error' })
   }
 }
 
@@ -1056,9 +1029,9 @@ async function loadData (sheet, st, root, silent = false) {
 async function computeData (sheet, st, root) {
   const orgCode = st.props.orgCode
   const periodCode = st.curPeriod || st.props.periodCode
-  if (!orgCode || !periodCode) { toast(root, '缺少组织或期间上下文', 'error'); return }
+  if (!orgCode || !periodCode) { showCmxToast('缺少组织或期间上下文', { level: 'error' }); return }
   try {
-    toast(root, '正在按公式计算…', 'info')
+    showCmxToast('正在按公式计算…', { level: 'info' })
     const res = await apiJson(`/api/report-design/reports/${enc(st.props.reportCode)}/compute`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ version: st.props.version || '', orgCode, periodCode }),
@@ -1067,24 +1040,24 @@ async function computeData (sheet, st, root) {
     const errs = res?.errorCount || 0
     if (errs > 0) {
       const detail = (res?.errors || []).slice(0, 3).join('；')
-      toast(root, `计算完成：${computed} 格已算，${errs} 格异常（${detail}）`, 'warn')
+      showCmxToast(`计算完成：${computed} 格已算，${errs} 格异常（${detail}）`, { level: 'warning' })
     } else {
-      toast(root, `计算完成：${computed} 个单元格已算并落库`, 'success')
+      showCmxToast(`计算完成：${computed} 个单元格已算并落库`, { level: 'success' })
     }
     // 计算已落 cr_cell_data，取数把算好的值刷回画布
     await loadData(sheet, st, root)
   } catch (err) {
-    toast(root, `计算失败：${String(err?.message || err)}`, 'error')
+    showCmxToast(`计算失败：${String(err?.message || err)}`, { level: 'error' })
   }
 }
 
 /** 存数：收集画布非公式有值单元格 → POST data（按 org+period UPSERT cr_cell_data）。 */
 async function saveData (sheet, st, root) {
   const { orgCode, periodCode } = st.props
-  if (!orgCode || !periodCode) { toast(root, '缺少组织或期间上下文', 'error'); return }
+  if (!orgCode || !periodCode) { showCmxToast('缺少组织或期间上下文', { level: 'error' }); return }
   const wb = sheet.getWorkbook?.()
   const ws = wb?.getActiveSheet?.()
-  if (!ws) { toast(root, '工作簿未就绪', 'error'); return }
+  if (!ws) { showCmxToast('工作簿未就绪', { level: 'error' }); return }
   const sheetCode = ws.name ? ws.name() : 'Sheet1'
   const cells = []
   const rc = Math.min(ws.getRowCount ? ws.getRowCount() : 0, 500)
@@ -1114,10 +1087,10 @@ async function saveData (sheet, st, root) {
       body: JSON.stringify({ version: st.props.version || '', orgCode, periodCode, cells }),
     })
     markDirty(st, false) // 存数成功 → 清除未保存标记
-    toast(root, `已保存 ${cells.length} 个单元格数据`, 'success')
+    showCmxToast(`已保存 ${cells.length} 个单元格数据`, { level: 'success' })
     return true
   } catch (err) {
-    toast(root, `存数失败：${String(err?.message || err)}`, 'error')
+    showCmxToast(`存数失败：${String(err?.message || err)}`, { level: 'error' })
     return false
   }
 }
@@ -1282,7 +1255,7 @@ function bind (root, st, view) {
     const sheet = root.querySelector('[data-ra-spread]')
     root.querySelectorAll('[data-ra-cmd]').forEach((btn) => btn.addEventListener('click', () => {
       const cmd = btn.getAttribute('data-ra-cmd')
-      if (!sheet) { toast(root, '画布未就绪', 'error'); return }
+      if (!sheet) { showCmxToast('画布未就绪', { level: 'error' }); return }
       closeRptMenu(root) // 菜单项点击后收起下拉
       if (cmd === 'load') loadData(sheet, st, root)
       else if (cmd === 'compute') computeData(sheet, st, root)
@@ -1305,7 +1278,7 @@ function bind (root, st, view) {
       // content 页顶部徽标同步 + 更新 content 区 tab 标签
       refreshInstance(st, (v) => v === 'content' || v === 'propertyStatus')
       updateApplierTab(st)
-      if (st.dataLoaded) toast(root, `期间已切到 ${val}，请在报表页点「取数」刷新数据`, 'info')
+      if (st.dataLoaded) showCmxToast(`期间已切到 ${val}，请在报表页点「取数」刷新数据`, { level: 'info' })
     })
   } else if (view === 'propertyStatus') {
     bindFloatPanel(root, st)
@@ -1343,7 +1316,7 @@ async function loadFloatItems (st, root) {
     st.__floatPanel = { loaded: true, items: (data && data.items) || [], kind: 'row' }
   } catch (e) {
     st.__floatPanel = { loaded: true, items: [], kind: 'row' }
-    toast(root, `浮动明细加载失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    showCmxToast(`浮动明细加载失败：${e instanceof Error ? e.message : String(e)}`, { level: 'error' })
   }
   refreshInstance(st, (v) => v === 'propertyStatus')
 }
@@ -1363,10 +1336,10 @@ async function saveFloatItems (st, root) {
     await apiJson(`/api/report-design/reports/${enc(st.props.reportCode)}/float/rows`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(floatCtxBody(st, { items })),
     })
-    toast(root, `已保存 ${items.length} 条浮动明细`, 'success')
+    showCmxToast(`已保存 ${items.length} 条浮动明细`, { level: 'success' })
     await loadFloatItems(st, root)
     reExpandCanvas(st, root)
-  } catch (e) { toast(root, `保存失败：${e instanceof Error ? e.message : String(e)}`, 'error') }
+  } catch (e) { showCmxToast(`保存失败：${e instanceof Error ? e.message : String(e)}`, { level: 'error' }) }
 }
 
 async function seedFloatItems (st, root) {
@@ -1374,10 +1347,10 @@ async function seedFloatItems (st, root) {
     const r = await apiJson(`/api/report-design/reports/${enc(st.props.reportCode)}/float/seed`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(floatCtxBody(st)),
     })
-    toast(root, `已从取数初始化 ${r?.seeded ?? 0} 条（源:${r?.dataSource || '-'}）`, 'success')
+    showCmxToast(`已从取数初始化 ${r?.seeded ?? 0} 条（源:${r?.dataSource || '-'}）`, { level: 'success' })
     await loadFloatItems(st, root)
     reExpandCanvas(st, root)
-  } catch (e) { toast(root, `初始化失败：${e instanceof Error ? e.message : String(e)}`, 'error') }
+  } catch (e) { showCmxToast(`初始化失败：${e instanceof Error ? e.message : String(e)}`, { level: 'error' }) }
 }
 
 async function deleteFloatItem (st, root, id, idx) {
@@ -1385,10 +1358,10 @@ async function deleteFloatItem (st, root, id, idx) {
   if (!id) { (st.__floatPanel.items || []).splice(idx, 1); refreshInstance(st, (v) => v === 'propertyStatus'); return }
   try {
     await apiJson(`/api/report-design/reports/${enc(st.props.reportCode)}/float/rows/${enc(String(id))}`, { method: 'DELETE' })
-    toast(root, '已删除', 'success')
+    showCmxToast('已删除', { level: 'success' })
     await loadFloatItems(st, root)
     reExpandCanvas(st, root)
-  } catch (e) { toast(root, `删除失败：${e instanceof Error ? e.message : String(e)}`, 'error') }
+  } catch (e) { showCmxToast(`删除失败：${e instanceof Error ? e.message : String(e)}`, { level: 'error' }) }
 }
 
 /** 重展开画布：重新调 /expand（读存储表）并把结果落画布。 */
@@ -1551,7 +1524,7 @@ function bindHistoryMenus (root, st, sheet) {
 
 /** 校验：占位——后端无同步单报表校验端点（rpt.verify 是异步批量作业，另案接入）。 */
 function verifyData (sheet, st, root) {
-  toast(root, '校验引擎待接入（后续对接 rpt.verify 作业）', 'info')
+  showCmxToast('校验引擎待接入（后续对接 rpt.verify 作业）', { level: 'info' })
 }
 
 // ── Excel 样式公式栏（名称框 + fx + 内容编辑器）：绑定 + 选区联动 ─────────────
@@ -1631,7 +1604,7 @@ function fxSyncFromSelection (root, st) {
 function applyFxInput (sheet, st, root, raw) {
   const ws = sheet?.getWorkbook?.()?.getActiveSheet?.()
   const p = parseAddr(st.selectedCell || 'A1')
-  if (!ws || !p) { toast(root, '请先选中单元格', 'error'); return }
+  if (!ws || !p) { showCmxToast('请先选中单元格', { level: 'error' }); return }
   const value = String(raw ?? '')
   const run = () => {
     if (value.startsWith('=')) ws.setFormula(p.row, p.col, value.slice(1))
@@ -1658,7 +1631,7 @@ function bindFormulaBar (root, st, sheet) {
     const v = String(nb?.value || '').trim()
     if (!gotoCellOrRange(sheet, st, v)) {
       if (nb) nb.value = st.selectedRange || st.selectedCell || 'A1'
-      toast(root, '无效的单元格/区域地址（示例：B4 或 A1:C5）', 'error')
+      showCmxToast('无效的单元格/区域地址（示例：B4 或 A1:C5）', { level: 'error' })
       return
     }
     fxSyncFromSelection(root, st)
@@ -1723,11 +1696,11 @@ function openFxEditor (sheet, st, root, anchorEl) {
     root.appendChild(el)
     el.addEventListener('cmx-fx-commit', (ev) => {
       const expr = String(ev.detail?.expr || '').trim().replace(/^=+/, '')
-      if (!expr) { toast(root, '表达式为空', 'error'); return }
+      if (!expr) { showCmxToast('表达式为空', { level: 'error' }); return }
       const addr = ev.detail?.target || st.selectedCell || 'A1'
       if (addr !== st.selectedCell) gotoCellOrRange(sheet, st, addr)
       applyFxInput(sheet, st, root, '=' + expr) // 应用器无 cellMap，只写画布公式
-      toast(root, `已写入 ${addr}：=${expr}`, 'success')
+      showCmxToast(`已写入 ${addr}：=${expr}`, { level: 'success' })
     })
   }
   el.configure({

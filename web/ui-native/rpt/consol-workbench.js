@@ -66,9 +66,7 @@ const SCOPE_BADGE = {
   unchanged: { label: '不变', color: '#64748b' },
 }
 
-const esc = (s) => String(s ?? '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+const { escHtml: esc } = globalThis.__cmxDataComp // 共享转义（cmx-data-comp/lib/cmx-page-helpers.js；最严格五字符集合，文本/属性上下文皆安全）
 
 const enc = (s) => encodeURIComponent(String(s ?? ''))
 
@@ -92,19 +90,7 @@ function normalizeArray (v) {
   return []
 }
 
-async function apiJson (url, options = {}) {
-  const res = await fetch(url, {
-    ...options,
-    headers: { Accept: 'application/json', ...(options.headers || {}) },
-    credentials: 'same-origin',
-  })
-  let j = null
-  try { j = await res.json() } catch {}
-  if (!res.ok || (j && typeof j.code === 'number' && j.code !== 0)) {
-    throw new Error((j && (j.msg || j.error)) || `HTTP ${res.status}`)
-  }
-  return j && typeof j === 'object' && 'data' in j ? j.data : j
-}
+const { apiJson } = globalThis.__cmxDataComp // 共享 fetch 封装（cmx-data-comp/lib/cmx-page-helpers.js；信封解包+结构化错误）
 
 // ============================================================================
 // 数据装载
@@ -201,53 +187,53 @@ async function loadNode (doRefresh = true) {
 // ============================================================================
 
 async function runConsolidation () {
-  if (!state.selectedScheme || !state.selectedPeriod) { toast('请先选择方案与期间', 'warn'); return }
+  if (!state.selectedScheme || !state.selectedPeriod) { showCmxToast('请先选择方案与期间', { level: 'warning' }); return }
   state.running = true; refreshAll()
   try {
     const d = await apiJson('/api/consol/run', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scheme: state.selectedScheme, period: state.selectedPeriod }),
     })
-    toast(d.message || '合并完成', 'ok')
+    showCmxToast(d.message || '合并完成', { level: 'success' })
     await loadNode(false)
   } catch (err) {
-    toast('合并失败：' + (err.message || err), 'error')
+    showCmxToast('合并失败：' + (err.message || err), { level: 'error' })
   } finally {
     state.running = false; refreshAll()
   }
 }
 
 async function runReconcile () {
-  if (!state.selectedScheme || !state.selectedPeriod) { toast('请先选择方案与期间', 'warn'); return }
+  if (!state.selectedScheme || !state.selectedPeriod) { showCmxToast('请先选择方案与期间', { level: 'warning' }); return }
   state.running = true; refreshAll()
   try {
     const d = await apiJson('/api/consol/ic-reconcile', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scheme: state.selectedScheme, period: state.selectedPeriod }),
     })
-    toast(d.message || '对账完成', 'ok')
+    showCmxToast(d.message || '对账完成', { level: 'success' })
     state.tab = 'recon'
     await loadNode(false)
   } catch (err) {
-    toast('对账失败：' + (err.message || err), 'error')
+    showCmxToast('对账失败：' + (err.message || err), { level: 'error' })
   } finally {
     state.running = false; refreshAll()
   }
 }
 
 async function runScopeChange () {
-  if (!state.selectedScheme || !state.selectedPeriod) { toast('请先选择方案与期间', 'warn'); return }
+  if (!state.selectedScheme || !state.selectedPeriod) { showCmxToast('请先选择方案与期间', { level: 'warning' }); return }
   state.running = true; refreshAll()
   try {
     const d = await apiJson('/api/consol/scope-change', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scheme: state.selectedScheme, period: state.selectedPeriod }),
     })
-    toast(d.message || '范围变动对比完成', 'ok')
+    showCmxToast(d.message || '范围变动对比完成', { level: 'success' })
     state.tab = 'scope'
     await loadNode(false)
   } catch (err) {
-    toast('范围变动失败：' + (err.message || err), 'error')
+    showCmxToast('范围变动失败：' + (err.message || err), { level: 'error' })
   } finally {
     state.running = false; refreshAll()
   }
@@ -255,7 +241,7 @@ async function runScopeChange () {
 
 // N4:出表 —— seed 合并四表定义 + 跑 CF/EQC 聚合,成功后切「合并报表」tab 并加载清单。
 async function runStatements () {
-  if (!state.selectedScheme || !state.selectedPeriod) { toast('请先选择方案与期间', 'warn'); return }
+  if (!state.selectedScheme || !state.selectedPeriod) { showCmxToast('请先选择方案与期间', { level: 'warning' }); return }
   state.running = true; refreshAll()
   try {
     await apiJson('/api/consol/seed-statements', {
@@ -266,11 +252,11 @@ async function runStatements () {
       apiJson('/api/consol/cashflow/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scheme: state.selectedScheme, period: state.selectedPeriod }) }).catch(() => {}),
       apiJson('/api/consol/equity/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scheme: state.selectedScheme, period: state.selectedPeriod }) }).catch(() => {}),
     ])
-    toast('合并四表已出表', 'ok')
+    showCmxToast('合并四表已出表', { level: 'success' })
     state.tab = 'statements'
     await loadStatements()
   } catch (err) {
-    toast('出表失败：' + (err.message || err), 'error')
+    showCmxToast('出表失败：' + (err.message || err), { level: 'error' })
   } finally {
     state.running = false; refreshAll()
   }
@@ -325,7 +311,7 @@ async function loadNotes () {
     state.notes = d.notes || null
   } catch (err) {
     state.notes = null
-    toast('附注生成失败：' + (err.message || err), 'error')
+    showCmxToast('附注生成失败：' + (err.message || err), { level: 'error' })
   } finally {
     state.notesLoading = false; refreshAll()
   }
@@ -393,26 +379,7 @@ function refreshAll () {
   }
 }
 
-function toast (message, kind = 'info') {
-  requestAnimationFrame(() => {
-    let host = null
-    for (const h of Array.from(state.hosts)) {
-      if (!h || !h.isConnected) continue
-      const root = h.renderRoot || h.shadowRoot?.querySelector('.native-page-root')
-      const sec = root?.querySelector?.('.cg-content')
-      if (sec) { host = sec; break }
-    }
-    if (!host) return
-    if (getComputedStyle(host).position === 'static') host.style.position = 'relative'
-    let box = host.querySelector(':scope > .cg-toast')
-    if (!box) { box = document.createElement('div'); box.className = 'cg-toast'; host.appendChild(box) }
-    box.setAttribute('data-kind', kind)
-    box.textContent = message
-    box.classList.remove('show'); void box.offsetWidth; box.classList.add('show')
-    clearTimeout(box.__t)
-    box.__t = setTimeout(() => box.classList.remove('show'), 3200)
-  })
-}
+const { showCmxToast } = globalThis.__cmxDataComp // 共享 toast（cmx-data-comp/lib/cmx-toast.js；治理清单 B-05）
 
 function viewHtml (view) {
   if (view === 'explorer') return explorerHtml()
