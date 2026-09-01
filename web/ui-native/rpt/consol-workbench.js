@@ -42,11 +42,11 @@ const state = {
 }
 
 const METHOD_LABEL = { full: '全额合并', equity: '权益法', proportional: '比例合并', cost: '成本法' }
-const METHOD_COLOR = { full: '#1e88e5', equity: '#8e24aa', proportional: '#00acc1', cost: '#64748b' }
+const METHOD_COLOR = { full: 'var(--sapInformationElementColor, #1e88e5)', equity: '#8e24aa', proportional: '#00acc1', cost: 'var(--sapInformationElementColor, #64748b)' }
 const RECON_BADGE = {
-  matched: { label: '已匹配', color: '#43a047' },
-  diff: { label: '有差异', color: '#e53935' },
-  one_sided: { label: '单边未达', color: '#fb8c00' },
+  matched: { label: '已匹配', color: 'var(--sapPositiveTextColor, #43a047)' },
+  diff: { label: '有差异', color: 'var(--sapNegativeTextColor, #e53935)' },
+  one_sided: { label: '单边未达', color: 'var(--sapCriticalTextColor, #fb8c00)' },
 }
 const ELIM_LABEL = {
   capital: '资本抵销', capital_common_control: '资本抵销·同一控制', nci: '少数股东损益', debt: '债务抵销', sales: '购销抵销',
@@ -58,12 +58,12 @@ const ELIM_LABEL = {
 }
 
 const SCOPE_BADGE = {
-  first_time: { label: '新纳入', color: '#43a047' },
-  disposal: { label: '处置', color: '#e53935' },
-  ownership_up: { label: '增持', color: '#1e88e5' },
-  ownership_down: { label: '减持', color: '#fb8c00' },
+  first_time: { label: '新纳入', color: 'var(--sapPositiveTextColor, #43a047)' },
+  disposal: { label: '处置', color: 'var(--sapNegativeTextColor, #e53935)' },
+  ownership_up: { label: '增持', color: 'var(--sapLinkColor, #1e88e5)' },
+  ownership_down: { label: '减持', color: 'var(--sapCriticalTextColor, #fb8c00)' },
   method_change: { label: '方法变更', color: '#8e24aa' },
-  unchanged: { label: '不变', color: '#64748b' },
+  unchanged: { label: '不变', color: 'var(--sapLinkColor, #64748b)' },
 }
 
 const { escHtml: esc } = globalThis.__cmxDataComp // 共享转义（cmx-data-comp/lib/cmx-page-helpers.js；最严格五字符集合，文本/属性上下文皆安全）
@@ -544,7 +544,7 @@ function reconTable () {
     return `<cmx-empty-state icon="synchronize" title="暂无对账结果" description="录入双边申报后点「运行对账」" size="md"></cmx-empty-state>`
   }
   const rows = state.recon.map((r) => {
-    const st = RECON_BADGE[r.recon_status] || { label: r.recon_status, color: '#64748b' }
+    const st = RECON_BADGE[r.recon_status] || { label: r.recon_status, color: 'var(--sapLinkColor, #64748b)' }
     const diffN = num(r.diff)
     return `<tr class="${r.recon_status === 'diff' ? 'row-diff' : ''}">
       <td><b>${esc(r.entity_a)}</b> → <b>${esc(r.entity_b)}</b></td>
@@ -601,7 +601,7 @@ function scopeChangeTable () {
     return `<cmx-empty-state icon="org-chart" title="暂无范围变动" description="点「范围变动」对比本期与上期合并范围" size="md"></cmx-empty-state>`
   }
   const rows = state.scopeChange.map((r) => {
-    const st = SCOPE_BADGE[r.change_type] || { label: r.change_type, color: '#64748b' }
+    const st = SCOPE_BADGE[r.change_type] || { label: r.change_type, color: 'var(--sapLinkColor, #64748b)' }
     const pm = r.prev_method ? (METHOD_LABEL[r.prev_method] || r.prev_method) : '–'
     const cm = r.curr_method ? (METHOD_LABEL[r.curr_method] || r.curr_method) : '–'
     const mChanged = r.change_type === 'method_change'
@@ -646,7 +646,7 @@ function notesPanel () {
   // ③ 范围变动
   const sc = n.scopeChange || {}
   const scRows = (sc.items || []).map((r) => {
-    const st = SCOPE_BADGE[r.change_type] || { label: r.change_type, color: '#64748b' }
+    const st = SCOPE_BADGE[r.change_type] || { label: r.change_type, color: 'var(--sapLinkColor, #64748b)' }
     return `<tr><td class="cg-acc"><b>${esc(r.org_code)}</b><span class="cg-acc-nm">${esc(r.org_name || '')}</span></td>
       <td class="cg-mid"><span class="cg-badge" style="--c:${st.color}">${esc(st.label)}</span></td>
       <td class="cg-amt">${pct(r.prev_ownership)} → ${pct(r.curr_ownership)}</td></tr>`
@@ -937,7 +937,7 @@ function styleCss () {
   .cg-node-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cg-node-badge, .cg-badge { font-size: 10.5px; font-weight: 700; color: #fff; background: var(--c, #64748b);
     border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
-  .cg-open { font-size: 10px; font-weight: 700; color: #fff; background: #fb8c00; border-radius: 4px;
+  .cg-open { font-size: 10px; font-weight: 700; color: #fff; background: var(--sapCriticalElementColor, #fb8c00); border-radius: 4px;
     padding: 0 5px; margin-left: 5px; }
 
   /* content */
@@ -982,7 +982,7 @@ function styleCss () {
   .cg-suggest { margin-top: 14px; }
   .cg-suggest-hd { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700;
     color: var(--sapContent_IconColor, #0a6ed1); margin-bottom: 8px; }
-  .cg-suggest-hd ui5-icon { width: 16px; height: 16px; color: #fb8c00; }
+  .cg-suggest-hd ui5-icon { width: 16px; height: 16px; color: var(--sapCriticalTextColor, #fb8c00); }
 
   /* property */
   .cg-prop { padding: 14px; gap: 2px; overflow: auto; }

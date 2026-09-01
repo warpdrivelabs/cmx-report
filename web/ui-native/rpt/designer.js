@@ -15,7 +15,7 @@ const MODEL_PLACEHOLDERS = [
   { code: 'budget_cube', name: '预算执行模型', desc: '预算、实际、预测的差异分析模型占位' },
 ]
 
-const CATEGORY_COLORS = ['#0a6ed1', '#00a6c8', '#10a760', '#d98200', '#7c3aed', '#c0398a', '#607d8b']
+const CATEGORY_COLORS = ['var(--sapInformationElementColor, #0a6ed1)', 'var(--sapInformationElementColor, #00a6c8)', 'var(--sapPositiveElementColor, #10a760)', 'var(--sapCriticalElementColor, #d98200)', 'var(--neo-violet, #7c3aed)', '#c0398a', 'var(--sapInformationElementColor, #607d8b)']
 const NUMBER_FORMATS = {
   general: '',
   number: '#,##0.00',
@@ -59,10 +59,10 @@ function reapInstanceIfDead (st) {
   if (!st) return false
   const anyLive = Array.from(st.hosts).some((h) => h && h.isConnected)
   if (anyLive) return false
-  try { if (st.opPollTimer) { clearInterval(st.opPollTimer); st.opPollTimer = null } } catch (_) {}
-  try { if (st.__rdSelPoll) { clearInterval(st.__rdSelPoll); st.__rdSelPoll = null } } catch (_) {}
-  try { if (st.opFlushTimer) { clearTimeout(st.opFlushTimer); st.opFlushTimer = null } } catch (_) {}
-  try { instances.delete(instanceKey(st.props || {})) } catch (_) {}
+  try { if (st.opPollTimer) { clearInterval(st.opPollTimer); st.opPollTimer = null } } catch (_) { /* 定时器已失效的竞态清理：忽略 */ }
+  try { if (st.__rdSelPoll) { clearInterval(st.__rdSelPoll); st.__rdSelPoll = null } } catch (_) { /* 定时器已失效的竞态清理：忽略 */ }
+  try { if (st.opFlushTimer) { clearTimeout(st.opFlushTimer); st.opFlushTimer = null } } catch (_) { /* 定时器已失效的竞态清理：忽略 */ }
+  try { instances.delete(instanceKey(st.props || {})) } catch (_) { /* 实例表清理失败：忽略 */ }
   return true
 }
 
@@ -150,7 +150,7 @@ function markDirty (st, dirty) {
     const ca = findContentArea(host)
     if (!ca || typeof ca.setTabDirty !== 'function') continue
     const tabId = ownTabId(host) || (ca.getActiveTabId ? ca.getActiveTabId() : ca._activeTab)
-    if (tabId) { try { ca.setTabDirty(tabId, !!dirty) } catch (_) {} }
+    if (tabId) { try { ca.setTabDirty(tabId, !!dirty) } catch (_) { /* 防御性忽略 */ } }
   }
 }
 
@@ -229,8 +229,8 @@ function getState (ctx) {
         align: 'left',
         valign: 'middle',
         format: 'general',
-        fontColor: '#1d2d3e',
-        fillColor: '#ffffff',
+        fontColor: 'var(--sapInformationElementColor, #1d2d3e)',
+        fillColor: 'var(--sapList_Background, #ffffff)',
         gridlines: true,
         headers: true,
         editable: true,
@@ -432,7 +432,7 @@ function parseA1 (addr) {
 
 function styleCss () {
   return `
-    .rd{--rd-blue:#0a6ed1;--rd-cyan:#00a6c8;--rd-green:#10a760;--rd-purple:#7c3aed;--rd-amber:#d98200;--rd-border:var(--sapGroup_TitleBorderColor,#d9e2ec);
+    .rd{--rd-blue:#0a6ed1;--rd-cyan:#00a6c8;--rd-green:#10a760;--rd-purple:var(--neo-violet, #7c3aed);--rd-amber:#d98200;--rd-border:var(--sapGroup_TitleBorderColor,#d9e2ec);
       height:100%;min-height:0;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;background:var(--sapBackgroundColor,#f5f6f7);color:var(--sapTextColor,#1d2d3e);font:13px/1.45 var(--sapFontFamily,Arial,sans-serif)}
     .rd-head{height:46px;flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:0 12px;border-bottom:1px solid var(--rd-border);background:var(--sapList_HeaderBackground,#f7f9fc)}
     .rd-head-ic{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--rd-blue) 12%,transparent);color:var(--rd-blue)}
@@ -445,7 +445,7 @@ function styleCss () {
     .rd-btoggle{--tg:var(--rd-blue);display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 8px 0 5px;border:1px solid transparent;border-radius:999px;background:transparent;font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:background .15s,border-color .15s}
     .rd-btoggle-calc{--tg:var(--rd-cyan)}.rd-btoggle-check{--tg:var(--rd-purple)}.rd-btoggle-element{--tg:var(--rd-green)}
     .rd-btoggle-track{position:relative;flex:0 0 auto;width:32px;height:18px;border-radius:999px;background:color-mix(in srgb,var(--rd-border) 62%,var(--sapField_Background,#fff));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--rd-border) 70%,transparent);transition:background .18s,box-shadow .18s}
-    .rd-btoggle-thumb{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(10,31,68,.34),0 0 0 .5px rgba(10,31,68,.06);transition:transform .18s cubic-bezier(.4,0,.2,1)}
+    .rd-btoggle-thumb{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--sapGroup_ContentBorderColor, #ffffff);box-shadow:0 1px 3px rgba(10,31,68,.34),0 0 0 .5px rgba(10,31,68,.06);transition:transform .18s cubic-bezier(.4,0,.2,1)}
     .rd-btoggle-label{color:var(--sapContent_LabelColor,#6a6d70);letter-spacing:.02em;transition:color .15s}
     .rd-btoggle:hover .rd-btoggle-track{background:color-mix(in srgb,var(--rd-border) 74%,var(--sapField_Background,#fff))}
     .rd-btoggle:hover .rd-btoggle-label{color:var(--sapContent_IconColor,#475059)}
@@ -477,7 +477,7 @@ function styleCss () {
     .rd-hbtn:hover{background:var(--sapTile_Background,#fff);color:var(--rd-blue);box-shadow:0 1px 4px rgba(10,31,68,.12)}
     .rd-hbtn:disabled{opacity:.36;cursor:not-allowed;background:transparent!important;color:var(--sapContent_IconColor,#475059)!important;box-shadow:none!important}
     .rd-hbtn.primary{background:linear-gradient(180deg,#1a7ee0,var(--rd-blue));color:#fff;box-shadow:0 1px 2px rgba(10,110,209,.36),inset 0 1px 0 rgba(255,255,255,.24);padding:0 12px;font-weight:700}
-    .rd-hbtn.primary:hover{background:linear-gradient(180deg,#248ceb,#0a63bd);color:#fff;box-shadow:0 3px 10px rgba(10,110,209,.4),inset 0 1px 0 rgba(255,255,255,.28)}
+    .rd-hbtn.primary:hover{background:linear-gradient(180deg,var(--sapInformationElementColor, #248ceb),var(--sapInformationElementColor, #0a63bd));color: #fff;box-shadow:0 3px 10px rgba(10,110,209,.4),inset 0 1px 0 rgba(255,255,255,.28)}
     .rd-history{position:relative;display:inline-flex;align-items:center;height:28px;border-radius:6px;overflow:visible}.rd-history:hover:not(.disabled){background:var(--sapTile_Background,#fff);box-shadow:0 1px 4px rgba(10,31,68,.12)}.rd-history.disabled{opacity:.36}
     .rd-history-action,.rd-history-caret{height:28px;border:0;background:transparent;color:var(--sapContent_IconColor,#475059);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0}.rd-history:hover:not(.disabled) .rd-history-action,.rd-history:hover:not(.disabled) .rd-history-caret{color:var(--rd-blue)}.rd-history-action{width:26px;border-radius:6px 0 0 6px}.rd-history-caret{width:14px;border-radius:0 6px 6px 0}.rd-history-caret:hover{background:color-mix(in srgb,var(--rd-blue) 12%,transparent)}.rd-history-action:disabled,.rd-history-caret:disabled{cursor:not-allowed}
     .rd-history-action svg{width:1.02rem;height:1.02rem;fill:none;stroke:currentColor;stroke-width:1.85;stroke-linecap:round;stroke-linejoin:round}.rd-history-caret svg{width:.56rem;height:.56rem;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
@@ -513,7 +513,7 @@ function styleCss () {
     .rd-border-line:hover{background:color-mix(in srgb,var(--rd-blue) 9%,transparent)}
     .rd-border-line.on{background:color-mix(in srgb,var(--rd-blue) 14%,transparent);border-color:color-mix(in srgb,var(--rd-blue) 40%,transparent);color:var(--rd-blue)}
     .rd-border-line svg{width:34px;height:11px;flex:0 0 auto}.rd-border-line span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .rd-history-item{width:100%;height:30px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:12px;display:flex;align-items:center;gap:8px;padding:0 8px;text-align:left;cursor:pointer}.rd-history-item:hover,.rd-history-item.hot{background:color-mix(in srgb,var(--rd-blue) 10%,transparent);color:var(--rd-blue)}.rd-history-item i{flex:0 0 auto;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;color:var(--sapContent_LabelColor,#6a6d70)}.rd-history-item:hover i,.rd-history-item.hot i{color:var(--rd-blue)}.rd-history-item i svg{width:.82rem;height:.82rem;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.rd-history-item span{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rd-history-item small{margin-left:auto;color:var(--sapContent_LabelColor,#8a9099);font:700 10px/1 ui-monospace,Menlo,monospace}.rd-history-item:hover small,.rd-history-item.hot small{color:var(--rd-blue)}.rd-history-empty{padding:12px 8px;color:var(--sapContent_LabelColor,#6a6d70);font-size:12px;text-align:center}.rd-btn,.rd-icon{height:30px;border:1px solid var(--rd-border);border-radius:6px;background:var(--sapButton_Background,#fff);color:var(--sapButton_TextColor,#0a6ed1);font:inherit;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:0 9px;cursor:pointer}.rd-icon{width:30px;padding:0}.rd-btn.primary{background:var(--rd-blue);border-color:var(--rd-blue);color:#fff}.rd-btn ui5-icon,.rd-icon ui5-icon{width:1rem;height:1rem}
+    .rd-history-item{width:100%;height:30px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:12px;display:flex;align-items:center;gap:8px;padding:0 8px;text-align:left;cursor:pointer}.rd-history-item:hover,.rd-history-item.hot{background:color-mix(in srgb,var(--rd-blue) 10%,transparent);color:var(--rd-blue)}.rd-history-item i{flex:0 0 auto;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;color:var(--sapContent_LabelColor,#6a6d70)}.rd-history-item:hover i,.rd-history-item.hot i{color:var(--rd-blue)}.rd-history-item i svg{width:.82rem;height:.82rem;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.rd-history-item span{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rd-history-item small{margin-left:auto;color:var(--sapContent_LabelColor,#8a9099);font:700 10px/1 ui-monospace,Menlo,monospace}.rd-history-item:hover small,.rd-history-item.hot small{color:var(--rd-blue)}.rd-history-empty{padding:12px 8px;color:var(--sapContent_LabelColor,#6a6d70);font-size:12px;text-align:center}.rd-btn,.rd-icon{height:30px;border:1px solid var(--rd-border);border-radius:6px;background:var(--sapButton_Background,#fff);color:var(--sapButton_TextColor,#0a6ed1);font:inherit;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:0 9px;cursor:pointer}.rd-icon{width:30px;padding:0}.rd-btn.primary{background:var(--rd-blue);border-color:var(--rd-blue);color: #fff}.rd-btn ui5-icon,.rd-icon ui5-icon{width:1rem;height:1rem}
     .rd-body{flex:1;min-height:0;overflow:auto;padding:10px;box-sizing:border-box}.rd-tabs{display:flex;gap:6px;padding:8px 8px 0;border-bottom:1px solid var(--rd-border);background:color-mix(in srgb,var(--rd-blue) 5%,var(--sapList_HeaderBackground,#f7f9fc))}.rd-tab{height:34px;border:1px solid var(--rd-border);border-bottom:0;border-radius:8px 8px 0 0;background:var(--sapTile_Background,#fff);color:inherit;font-weight:700;padding:0 10px;display:flex;align-items:center;gap:6px}.rd-tab.active{color:var(--rd-blue);box-shadow:0 -2px 0 var(--rd-blue)}.rd-tab ui5-icon{width:1rem;height:1rem}
     .rd-el-panel{flex:1;min-height:0;display:flex;flex-direction:column}.rd-search{flex:0 0 auto;height:43px;box-sizing:border-box;display:flex;align-items:center;padding:0 10px;border-bottom:1px solid var(--rd-border);background:var(--sapList_HeaderBackground,#f7f9fc)}.rd-search-box{flex:1;height:32px;display:flex;align-items:center;gap:7px;border:1px solid var(--rd-border);border-radius:8px;background:var(--sapField_Background,#fff);padding:0 8px;box-sizing:border-box}.rd-search-box ui5-icon{color:var(--rd-cyan);width:1rem;height:1rem}.rd-search-box input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:inherit;font:inherit;font-size:12px}.rd-search-clear{width:22px;height:22px;border:0;border-radius:5px;background:transparent;color:var(--sapContent_LabelColor,#6a6d70);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.rd-search-clear ui5-icon{width:.8rem;height:.8rem}.rd-el-scroll{flex:1;min-height:0;overflow:auto;padding:10px;box-sizing:border-box}
     .rd-cat{--cat-color:var(--rd-cyan);border:1px solid color-mix(in srgb,var(--cat-color) 16%,var(--rd-border));border-radius:8px;background:color-mix(in srgb,var(--cat-color) 3%,var(--sapTile_Background,#fff));margin-bottom:9px;overflow:hidden}.rd-cat-h{width:100%;height:34px;border:0;border-bottom:1px solid color-mix(in srgb,var(--cat-color) 14%,var(--rd-border));display:flex;align-items:center;gap:8px;padding:0 10px;background:color-mix(in srgb,var(--cat-color) 8%,var(--sapList_HeaderBackground,#f7f9fc));color:inherit;font:inherit;font-weight:800;text-align:left;cursor:pointer}.rd-cat-h:hover{background:color-mix(in srgb,var(--cat-color) 13%,var(--sapList_HeaderBackground,#f7f9fc))}.rd-cat-h ui5-icon{color:var(--cat-color);width:1rem;height:1rem}.rd-cat-h small{margin-left:auto;min-width:24px;height:18px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;color:var(--cat-color);font-size:11px;background:color-mix(in srgb,var(--cat-color) 10%,transparent);border:1px solid color-mix(in srgb,var(--cat-color) 18%,var(--rd-border))}.rd-cat.closed .rd-cat-h{border-bottom-color:transparent}.rd-cat.closed .rd-cat-body{display:none}.rd-cat-body{display:grid;gap:6px;padding:7px}
@@ -531,7 +531,7 @@ function styleCss () {
     .rd-tool:hover,.rd-menu-tool:hover{background:#fff;color:var(--rd-blue);box-shadow:0 1px 4px rgba(10,31,68,.12)}
     .rd-tool:disabled:hover{background:transparent;color:var(--sapContent_IconColor,#475059);box-shadow:none}
     .rd-tool.active{background:var(--rd-blue);color:#fff;box-shadow:0 1px 3px rgba(10,110,209,.36),inset 0 1px 0 rgba(255,255,255,.22)}
-    .rd-tool.active:hover{background:#0a63bd;color:#fff}
+    .rd-tool.active:hover{background:var(--sapInformationElementColor, #0a63bd);color: #fff}
     .rd-menu-tool{min-width:auto;gap:4px;padding:0 4px 0 7px}
     .rd-menu-tool .rd-mt-ic{display:inline-flex;align-items:center}.rd-menu-tool .rd-mt-val{font-size:12px;font-weight:600;min-width:0;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--sapTextColor,#1d2d3e)}
     .rd-menu-tool .rd-mt-car{flex:0 0 auto;width:.52rem;height:.52rem;opacity:.55}.rd-menu-tool .rd-mt-car svg{width:.52rem;height:.52rem;stroke-width:2.4}
@@ -566,7 +566,7 @@ function styleCss () {
     .rd-cm-none:hover{border-color:var(--rd-blue);color:var(--rd-blue)}
     .rd-cm-more{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--sapContent_LabelColor,#6a6d70)}
     .rd-cm-more label{display:inline-flex;align-items:center;gap:6px;cursor:pointer}.rd-cm-more input[type=color]{width:26px;height:22px;border:1px solid var(--rd-border);border-radius:4px;background:#fff;cursor:pointer;padding:0}
-    .rd-more{flex:0 0 auto;position:relative}.rd-more[hidden]{display:none}.rd-more>.rd-tool.active,.rd-more>.rd-tool[aria-expanded="true"]{background:var(--rd-blue);color:#fff}
+    .rd-more{flex:0 0 auto;position:relative}.rd-more[hidden]{display:none}.rd-more>.rd-tool.active,.rd-more>.rd-tool[aria-expanded="true"]{background:var(--rd-blue);color: #fff}
     .rd-more-menu{position:absolute;right:0;top:36px;z-index:20;min-width:64px;display:none;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--rd-border);border-radius:9px;background:var(--sapPopover_Background,#fff);box-shadow:0 14px 36px rgba(10,31,68,.2)}.rd-more.open .rd-more-menu{display:flex}.rd-more-menu .rd-ribbon-item,.rd-more-menu .rd-group{display:inline-flex}.rd-more-menu .rd-group{background:color-mix(in srgb,var(--rd-border) 22%,transparent);flex-wrap:wrap}.rd-more-menu .rd-ribbon-sep{display:none}
     .rd-sheet-stage{flex:1;min-height:0;overflow:hidden;padding:0;background:linear-gradient(180deg,color-mix(in srgb,var(--rd-blue) 4%,var(--sapBackgroundColor,#f5f6f7)),var(--sapBackgroundColor,#f5f6f7))}.rd-spread-host{height:100%;min-height:480px;border:0;border-radius:0;background:var(--sapTile_Background,#fff);box-shadow:none;overflow:hidden}.rd-spread{display:block;width:100%;height:100%;min-height:480px}
     /* Excel 样式公式栏：名称框 | fx | 公式输入框，一行贴在工具栏与网格之间 */
@@ -600,7 +600,7 @@ function styleCss () {
     .rd-cell-badge.both{border-color:transparent;background:linear-gradient(var(--sapTile_Background,#fff),var(--sapTile_Background,#fff)) padding-box,linear-gradient(120deg,var(--rd-cyan),var(--rd-purple)) border-box}
     .rd-cell-badge.both .rd-badge-pill{color:var(--rd-purple);background:linear-gradient(120deg,color-mix(in srgb,var(--rd-cyan) 16%,var(--sapTile_Background,#fff)),color-mix(in srgb,var(--rd-purple) 16%,var(--sapTile_Background,#fff)))}
     .rd-prop-grid{display:grid;grid-template-columns:1fr;gap:8px}.rd-sec{border:1px solid var(--rd-border);border-radius:8px;background:var(--sapTile_Background,#fff);padding:10px}.rd-sec>b{display:block;margin-bottom:7px;color:var(--rd-blue)}.rd-row{display:grid;grid-template-columns:86px minmax(0,1fr);gap:8px;align-items:center;margin:6px 0}.rd-row span{font-size:11px;color:var(--sapContent_LabelColor,#6a6d70)}.rd-row b,.rd-row input{min-width:0}.rd-row input{height:28px;border:1px solid var(--rd-border);border-radius:6px;background:var(--sapField_Background,#fff);color:inherit;padding:0 8px}.rd-note{border:1px dashed var(--rd-border);border-radius:8px;padding:12px;background:var(--sapList_HeaderBackground,#f7f9fc);color:var(--sapContent_LabelColor,#6a6d70)}.rd-empty{padding:18px;border:1px dashed var(--rd-border);border-radius:8px;background:var(--sapTile_Background,#fff);color:var(--sapContent_LabelColor,#6a6d70)}.rd-loading{display:flex;align-items:center;gap:8px;padding:14px;color:var(--sapContent_LabelColor,#6a6d70)}
-    .rd-toast{position:absolute;left:50%;bottom:22px;transform:translate(-50%,14px);z-index:60;max-width:min(560px,88%);padding:10px 16px;border-radius:9px;background:#1d2d3e;color:#fff;font-size:12.5px;font-weight:600;box-shadow:0 12px 32px rgba(10,31,68,.34);opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;display:flex;align-items:center;gap:8px}.rd-toast.show{opacity:1;transform:translate(-50%,0)}.rd-toast[data-kind="success"]{background:linear-gradient(180deg,#12b56b,#0f9d5c)}.rd-toast[data-kind="error"]{background:linear-gradient(180deg,#e5544b,#c0392b)}.rd-toast::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.8;flex:0 0 auto}
+    .rd-toast{position:absolute;left:50%;bottom:22px;transform:translate(-50%,14px);z-index:60;max-width:min(560px,88%);padding:10px 16px;border-radius:9px;background:var(--sapInformationElementColor, #1d2d3e);color:var(--sapGroup_ContentBorderColor, #ffffff);font-size:12.5px;font-weight:600;box-shadow:0 12px 32px rgba(10,31,68,.34);opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;display:flex;align-items:center;gap:8px}.rd-toast.show{opacity:1;transform:translate(-50%,0)}.rd-toast[data-kind="success"]{background:linear-gradient(180deg,var(--sapPositiveElementColor, #12b56b),var(--sapPositiveElementColor, #0f9d5c))}.rd-toast[data-kind="error"]{background:linear-gradient(180deg,var(--sapNegativeElementColor, #e5544b),var(--sapNegativeElementColor, #c0392b))}.rd-toast::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.8;flex:0 0 auto}
     .rd-head-actions{margin-left:auto;display:flex;align-items:center;gap:6px}
     .rd-ibtn{width:28px;height:28px;border:1px solid var(--rd-border);border-radius:6px;background:var(--sapButton_Background,#fff);color:var(--sapContent_IconColor,#475059);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background .12s,color .12s,box-shadow .12s}.rd-ibtn:hover{color:var(--rd-blue);border-color:color-mix(in srgb,var(--rd-blue) 40%,var(--rd-border));box-shadow:0 1px 4px rgba(10,31,68,.12)}.rd-ibtn ui5-icon{width:1rem;height:1rem}.rd-ibtn.spin ui5-icon{animation:rd-spin .8s linear infinite}@keyframes rd-spin{to{transform:rotate(360deg)}}
     .rd-tab{cursor:pointer}
@@ -612,8 +612,8 @@ function styleCss () {
     .rd-fields input[readonly]{background:var(--sapList_HeaderBackground,#f7f9fc);color:var(--sapContent_LabelColor,#6a6d70)}
     .rd-fields .wide{grid-column:1 / -1}
     .rd-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
-    .rd-sbtn{height:28px;border:1px solid var(--rd-border);border-radius:6px;background:var(--sapButton_Background,#fff);color:var(--rd-blue);font:inherit;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px;padding:0 10px;cursor:pointer}.rd-sbtn:hover{background:color-mix(in srgb,var(--rd-blue) 8%,#fff);border-color:color-mix(in srgb,var(--rd-blue) 40%,var(--rd-border))}.rd-sbtn.primary{background:var(--rd-blue);border-color:var(--rd-blue);color:#fff}.rd-sbtn.primary:hover{background:#0a63bd}.rd-sbtn.danger{color:var(--rd-red,#bb0000)}.rd-sbtn.danger:hover{background:color-mix(in srgb,#bb0000 8%,#fff);border-color:color-mix(in srgb,#bb0000 40%,var(--rd-border))}.rd-sbtn ui5-icon{width:.95rem;height:.95rem}.rd-sbtn:disabled{opacity:.4;cursor:not-allowed}
-    .rd-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:3px}.rd-chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--rd-border);border-radius:999px;padding:2px 8px;font-size:11px;background:var(--sapList_HeaderBackground,#f7f9fc)}.rd-chip.on{color:#fff;background:var(--rd-green);border-color:var(--rd-green)}
+    .rd-sbtn{height:28px;border:1px solid var(--rd-border);border-radius:6px;background:var(--sapButton_Background,#fff);color:var(--rd-blue);font:inherit;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px;padding:0 10px;cursor:pointer}.rd-sbtn:hover{background:color-mix(in srgb,var(--rd-blue) 8%,#fff);border-color:color-mix(in srgb,var(--rd-blue) 40%,var(--rd-border))}.rd-sbtn.primary{background:var(--rd-blue);border-color:var(--rd-blue);color: #fff}.rd-sbtn.primary:hover{background:#0a63bd}.rd-sbtn.danger{color:var(--rd-red,#bb0000)}.rd-sbtn.danger:hover{background:color-mix(in srgb,#bb0000 8%,#fff);border-color:color-mix(in srgb,#bb0000 40%,var(--rd-border))}.rd-sbtn ui5-icon{width:.95rem;height:.95rem}.rd-sbtn:disabled{opacity:.4;cursor:not-allowed}
+    .rd-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:3px}.rd-chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--rd-border);border-radius:999px;padding:2px 8px;font-size:11px;background:var(--sapList_HeaderBackground,#f7f9fc)}.rd-chip.on{color: #fff;background:var(--rd-green);border-color:var(--rd-green)}
     .rd-list{display:flex;flex-direction:column;gap:6px;margin-top:4px}
     .rd-litem{border:1px solid var(--rd-border);border-radius:7px;background:var(--sapTile_Background,#fff);padding:7px 9px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;cursor:pointer}.rd-litem:hover{border-color:color-mix(in srgb,var(--rd-blue) 40%,var(--rd-border))}.rd-litem.active{border-color:var(--rd-blue);background:color-mix(in srgb,var(--rd-blue) 7%,var(--sapTile_Background,#fff))}.rd-litem-main{min-width:0}.rd-litem-main b{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rd-litem-main small{display:block;font-size:10.5px;color:var(--sapContent_LabelColor,#6a6d70);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:ui-monospace,Menlo,Consolas,monospace}.rd-litem-act{display:flex;gap:4px}.rd-litem-act button{width:24px;height:24px;border:0;border-radius:5px;background:transparent;color:var(--sapContent_LabelColor,#6a6d70);cursor:pointer;display:inline-flex;align-items:center;justify-content:center}.rd-litem-act button:hover{background:color-mix(in srgb,var(--rd-blue) 10%,transparent);color:var(--rd-blue)}.rd-litem-act button.danger:hover{background:color-mix(in srgb,#bb0000 10%,transparent);color:#bb0000}.rd-litem-act ui5-icon{width:.82rem;height:.82rem}
     .rd-badge{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.04em;padding:1px 5px;border-radius:4px;background:color-mix(in srgb,var(--rd-cyan) 14%,transparent);color:var(--rd-cyan);vertical-align:middle;margin-left:5px}.rd-badge.default{background:color-mix(in srgb,var(--rd-green) 14%,transparent);color:var(--rd-green)}.rd-badge.float{background:color-mix(in srgb,var(--rd-purple,#a855f7) 16%,transparent);color:var(--rd-purple,#a855f7)}
@@ -640,21 +640,21 @@ function styleCss () {
     /* Excel 样式函数定义面板（fx 按钮弹出，两栏，独立于旧 wizard） */
     /* ===== fx 函数/公式编辑器：非模态可拖动浮层 · 黄金分割横版 · DARK 自适应 ===== */
     /* 原则：底色/文字一律走 SAP 主题变量（dark 下自动深底浅字），强调只用 --rd-*，tint 混到
-       --sapTile_Background（非 #fff，否则 dark 下发白刺眼）。浮层在 .rd 外，故自带 --rd-* 变量。 */
-    .rd-fxp-mask{position:static;--rd-blue:#0a6ed1;--rd-cyan:#00a6c8;--rd-green:#10a760;--rd-purple:#7c3aed;--rd-amber:#d98200;--rd-red:#c9372c;--rd-border:var(--sapGroup_TitleBorderColor,#d9e2ec)}
+       --sapTile_Background（非 var(--sapList_Background, #ffffff)，否则 dark 下发白刺眼）。浮层在 .rd 外，故自带 --rd-* 变量。 */
+    .rd-fxp-mask{position:static;--rd-blue:#0a6ed1;--rd-cyan:#00a6c8;--rd-green:#10a760;--rd-purple:var(--neo-violet, #7c3aed);--rd-amber:#d98200;--rd-red:#c9372c;--rd-border:var(--sapGroup_TitleBorderColor,#d9e2ec)}
     /* 黄金分割：宽 720 ≈ 高 445 × 1.618，宽 > 高的横版 */
     .rd-fxp-panel{position:fixed;z-index:1000;width:min(720px,94vw);height:min(446px,86vh);display:flex;flex-direction:column;background:var(--sapTile_Background,#fff);color:var(--sapTextColor,#1d2d3e);border:1px solid color-mix(in srgb,var(--rd-blue) 30%,var(--rd-border));border-radius:12px;box-shadow:0 26px 70px rgba(0,0,0,.5),0 3px 12px rgba(0,0,0,.34);overflow:hidden}
-    .rd-fxp-head{display:flex;align-items:center;justify-content:space-between;padding:5px 10px;cursor:move;background:linear-gradient(135deg,var(--rd-blue),#0a4f9c);color:#fff;user-select:none;flex:0 0 auto}
-    .rd-fxp-head b{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:#fff}
+    .rd-fxp-head{display:flex;align-items:center;justify-content:space-between;padding:5px 10px;cursor:move;background:linear-gradient(135deg,var(--rd-blue),#0a4f9c);color: #fff;user-select:none;flex:0 0 auto}
+    .rd-fxp-head b{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color: #fff}
     .rd-fxp-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:18px;border-radius:5px;background:rgba(255,255,255,.22);font:italic 800 12px/1 "Times New Roman",Georgia,serif}
-    .rd-fxp-x{width:22px;height:22px;border:0;border-radius:6px;background:rgba(255,255,255,.16);color:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}.rd-fxp-x:hover{background:rgba(255,255,255,.32)}
+    .rd-fxp-x{width:22px;height:22px;border:0;border-radius:6px;background:rgba(255,255,255,.16);color:var(--sapGroup_ContentBorderColor, #ffffff);cursor:pointer;display:inline-flex;align-items:center;justify-content:center}.rd-fxp-x:hover{background:rgba(255,255,255,.32)}
     /* 公式编辑区（顶部整宽横条，绿色系强调） */
     .rd-fxp-editrow{flex:0 0 auto;display:flex;align-items:stretch;margin:11px 14px 8px;border:1.5px solid color-mix(in srgb,var(--rd-green) 45%,var(--rd-border));border-radius:9px;overflow:hidden}
     .rd-fxp-eq{display:flex;align-items:center;justify-content:center;width:30px;flex:0 0 auto;background:color-mix(in srgb,var(--rd-green) 22%,var(--sapField_Background,#fff));color:var(--rd-green);font:800 16px/1 ui-monospace,Menlo,Consolas,monospace;border-right:1px solid color-mix(in srgb,var(--rd-green) 34%,var(--rd-border))}
     .rd-fxp-expr{flex:1;min-height:44px;max-height:96px;resize:vertical;border:0;outline:0;padding:8px 11px;font:600 13.5px/1.5 ui-monospace,Menlo,Consolas,monospace;color:var(--sapTextColor,#1d2d3e);background:color-mix(in srgb,var(--rd-green) 10%,var(--sapField_Background,#fff))}
     .rd-fxp-expr::placeholder{color:var(--sapContent_LabelColor,#9aa4b0);font-weight:400;font-style:italic}
     /* 调色板：横版三区并排（运算符窄列 + 内置 + 取数），搜索跨整行 */
-    .rd-fxp-pal{flex:1;min-height:0;overflow:hidden;padding:6px 12px 8px;display:flex;flex-direction:column;gap:6px}.rd-fxp-oprow{flex:0 0 auto;display:flex;flex-wrap:nowrap;align-items:center;gap:5px;padding:6px 8px;border:1px solid var(--rd-border);border-left:4px solid var(--rd-amber);border-radius:9px;background:color-mix(in srgb,var(--rd-amber) 12%,var(--sapTile_Background,#fff))}.rd-fxp-tabs{flex:0 0 auto;display:flex;align-items:center;gap:6px}.rd-fxp-tab{height:28px;padding:0 12px;border:1px solid var(--rd-border);border-radius:8px;background:var(--sapField_Background,#fff);color:var(--sapContent_LabelColor,#6a6d70);font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:background .1s,color .1s,border-color .1s}.rd-fxp-tab.on.rd-fxp-tab-fetch{color:#fff;background:var(--rd-purple);border-color:var(--rd-purple)}.rd-fxp-tab.on.rd-fxp-tab-builtin{color:#fff;background:var(--rd-cyan);border-color:var(--rd-cyan)}.rd-fxp-tab:not(.on):hover{color:var(--rd-blue);border-color:color-mix(in srgb,var(--rd-blue) 40%,var(--rd-border))}.rd-fxp-list{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;border:1px solid var(--rd-border);border-radius:9px;padding:5px 6px}.rd-fxp-list-fetch{border-left:4px solid var(--rd-purple);background:color-mix(in srgb,var(--rd-purple) 8%,var(--sapTile_Background,#fff))}.rd-fxp-list-builtin{border-left:4px solid var(--rd-cyan);background:color-mix(in srgb,var(--rd-cyan) 8%,var(--sapTile_Background,#fff))}
+    .rd-fxp-pal{flex:1;min-height:0;overflow:hidden;padding:6px 12px 8px;display:flex;flex-direction:column;gap:6px}.rd-fxp-oprow{flex:0 0 auto;display:flex;flex-wrap:nowrap;align-items:center;gap:5px;padding:6px 8px;border:1px solid var(--rd-border);border-left:4px solid var(--rd-amber);border-radius:9px;background:color-mix(in srgb,var(--rd-amber) 12%,var(--sapTile_Background,#fff))}.rd-fxp-tabs{flex:0 0 auto;display:flex;align-items:center;gap:6px}.rd-fxp-tab{height:28px;padding:0 12px;border:1px solid var(--rd-border);border-radius:8px;background:var(--sapField_Background,#fff);color:var(--sapContent_LabelColor,#6a6d70);font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:background .1s,color .1s,border-color .1s}.rd-fxp-tab.on.rd-fxp-tab-fetch{color: #fff;background:var(--rd-purple);border-color:var(--rd-purple)}.rd-fxp-tab.on.rd-fxp-tab-builtin{color: #fff;background:var(--rd-cyan);border-color:var(--rd-cyan)}.rd-fxp-tab:not(.on):hover{color:var(--rd-blue);border-color:color-mix(in srgb,var(--rd-blue) 40%,var(--rd-border))}.rd-fxp-list{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;border:1px solid var(--rd-border);border-radius:9px;padding:5px 6px}.rd-fxp-list-fetch{border-left:4px solid var(--rd-purple);background:color-mix(in srgb,var(--rd-purple) 8%,var(--sapTile_Background,#fff))}.rd-fxp-list-builtin{border-left:4px solid var(--rd-cyan);background:color-mix(in srgb,var(--rd-cyan) 8%,var(--sapTile_Background,#fff))}
     .rd-fxp-search{flex:0 0 auto;margin-left:auto;width:210px;display:flex;align-items:center;gap:6px;height:28px;padding:0 9px;border:1px solid var(--rd-border);border-radius:8px;background:var(--sapField_Background,#fff)}
     .rd-fxp-search ui5-icon{width:.9rem;height:.9rem;color:var(--sapContent_LabelColor,#8a8d90)}
     .rd-fxp-search input{flex:1;border:0;outline:0;background:transparent;font:13px var(--sapFontFamily,Arial);color:var(--sapTextColor,#1d2d3e)}
@@ -782,7 +782,7 @@ function reportModel (st) {
         rowHeights: { 1: 34, 2: 28, 3: 28 },
         merges: ['B1:E1'],
         styleClasses: {
-          title: { bold: true, fontSize: 16, align: 'center', fillColor: '#eaf4ff', fontColor: '#0a6ed1' },
+          title: { bold: true, fontSize: 16, align: 'center', fillColor: '#eaf4ff', fontColor: 'var(--sapInformationElementColor, #0a6ed1)' },
           label: { bold: true, fillColor: '#f3f6f9' },
         },
       },
@@ -891,11 +891,11 @@ function selectField (field, title, options, value, cls = '') {
 
 /** 取色调色板（主题/标准色，Excel 常见）：5 行 × 8 列。 */
 const COLOR_PALETTE = [
-  '#000000', '#404040', '#595959', '#7f7f7f', '#a6a6a6', '#d9d9d9', '#f2f2f2', '#ffffff',
-  '#c00000', '#ff0000', '#ffc000', '#ffff00', '#92d050', '#00b050', '#00b0f0', '#0070c0',
-  '#002060', '#7030a0', '#e84c3d', '#e67e22', '#f1c40f', '#2ecc71', '#1abc9c', '#3498db',
-  '#9b59b6', '#34495e', '#c0392b', '#d35400', '#f39c12', '#27ae60', '#16a085', '#2980b9',
-  '#8e44ad', '#1d2d3e', '#e74c3c', '#e59866', '#f7dc6f', '#7dcea0', '#76d7c4', '#85c1e9',
+  '#000000', '#404040', '#595959', '#7f7f7f', 'var(--sapGroup_ContentBorderColor, #a6a6a6)', 'var(--sapBackgroundColor, #d9d9d9)', 'var(--sapBackgroundColor, #f2f2f2)', 'var(--sapList_Background, #ffffff)',
+  'var(--sapNegativeElementColor, #c00000)', 'var(--sapNegativeElementColor, #ff0000)', '#ffc000', '#ffff00', '#92d050', 'var(--sapPositiveElementColor, #00b050)', 'var(--sapInformationElementColor, #00b0f0)', 'var(--sapInformationElementColor, #0070c0)',
+  'var(--sapInformationElementColor, #002060)', '#7030a0', 'var(--sapNegativeElementColor, #e84c3d)', 'var(--sapCriticalElementColor, #e67e22)', '#f1c40f', 'var(--sapPositiveElementColor, #2ecc71)', 'var(--sapPositiveElementColor, #1abc9c)', 'var(--sapInformationElementColor, #3498db)',
+  '#9b59b6', 'var(--sapInformationElementColor, #34495e)', 'var(--sapNegativeElementColor, #c0392b)', 'var(--sapCriticalElementColor, #d35400)', 'var(--sapCriticalElementColor, #f39c12)', 'var(--sapPositiveElementColor, #27ae60)', 'var(--sapPositiveElementColor, #16a085)', 'var(--sapInformationElementColor, #2980b9)',
+  '#8e44ad', 'var(--sapInformationElementColor, #1d2d3e)', 'var(--sapNegativeElementColor, #e74c3c)', 'var(--sapCriticalElementColor, #e59866)', '#f7dc6f', '#7dcea0', '#76d7c4', 'var(--sapInformationElementColor, #85c1e9)',
 ]
 
 /**
@@ -910,7 +910,7 @@ function colorMenuTool (field, icon, title, value, fallback) {
       <span class="rd-cb-ic">${toolIcon(icon)}<span class="rd-cb-bar"></span></span><span class="rd-cb-car">${toolIcon('chevron-down')}</span>
     </button>
     <span class="rd-colormenu" data-rd-colormenu="${esc(field)}">
-      <button class="rd-cm-none" type="button" data-color-none="${esc(field)}"><span style="width:13px;height:13px;border:1px solid #c3ccd6;border-radius:3px;display:inline-block;position:relative;overflow:hidden"><span style="position:absolute;left:-1px;top:6px;width:19px;height:1.5px;background:#e74c3c;transform:rotate(-45deg)"></span></span>${esc(noneLabel)}</button>
+      <button class="rd-cm-none" type="button" data-color-none="${esc(field)}"><span style="width:13px;height:13px;border:1px solid #c3ccd6;border-radius:3px;display:inline-block;position:relative;overflow:hidden"><span style="position:absolute;left:-1px;top:6px;width:19px;height:1.5px;background:var(--sapNegativeElementColor, #e74c3c);transform:rotate(-45deg)"></span></span>${esc(noneLabel)}</button>
       <div class="rd-cm-sec">主题颜色</div>
       <div class="rd-swatch-grid">${swatches}</div>
       <div class="rd-cm-more"><label>更多颜色…<input type="color" data-color-custom="${esc(field)}" value="${esc(value || fallback)}"></label></div>
@@ -945,10 +945,10 @@ const BORDER_LINES = [
   { style: 'double', label: '双线' },
 ]
 /** 边框颜色预设（精简，对齐色板视觉）。 */
-const BORDER_COLORS = ['#000000', '#595959', '#8a8f94', '#c00000', '#ff0000', '#ffc000', '#00b050', '#0070c0', '#7030a0', '#ffffff']
+const BORDER_COLORS = ['#000000', '#595959', 'var(--sapGroup_ContentBorderColor, #8a8f94)', 'var(--sapNegativeElementColor, #c00000)', 'var(--sapNegativeElementColor, #ff0000)', '#ffc000', 'var(--sapPositiveElementColor, #00b050)', 'var(--sapInformationElementColor, #0070c0)', '#7030a0', 'var(--sapList_Background, #ffffff)']
 function borderMenuTool (st) {
   const curLine = (st && st.borderLineStyle) || 'thin'
-  const curColor = (st && st.borderColor) || '#8a8f94'
+  const curColor = (st && st.borderColor) || 'var(--sapGroup_ContentBorderColor, #8a8f94)'
   const colorRow = BORDER_COLORS.map((c) => `<button class="rd-swatch${c === curColor ? ' on' : ''}" type="button" data-border-color="${c}" title="${c}" style="background:${c}"></button>`).join('')
   const lineRow = BORDER_LINES.map((it) => `<button class="rd-border-line${it.style === curLine ? ' on' : ''}" type="button" data-border-line="${esc(it.style)}" title="${esc(it.label)}">
     ${lineStyleIcon(it.style)}<span>${esc(it.label)}</span>
@@ -972,7 +972,7 @@ function borderMenuTool (st) {
 }
 /** 线型预览小 SVG：一条对应样式的横线。 */
 function lineStyleIcon (style) {
-  const col = '#37414f'
+  const col = 'var(--sapInformationElementColor, #37414f)'
   if (style === 'double') return `<svg viewBox="0 0 40 12" aria-hidden="true"><line x1="2" y1="4.5" x2="38" y2="4.5" stroke="${col}" stroke-width="1"/><line x1="2" y1="7.5" x2="38" y2="7.5" stroke="${col}" stroke-width="1"/></svg>`
   const w = style === 'thick' ? 3 : style === 'medium' ? 2 : 1
   const da = style === 'dashed' ? ' stroke-dasharray="5 3"' : style === 'dotted' ? ' stroke-dasharray="1.5 2.5"' : ''
@@ -980,7 +980,7 @@ function lineStyleIcon (style) {
 }
 /** 边框位置的迷你 SVG：格子 + 对应边高亮（自绘，无需图标库）。 */
 function borderIcon (kind) {
-  const on = '#0a6ed1'; const off = '#c3ccd6'
+  const on = 'var(--sapInformationElementColor, #0a6ed1)'; const off = '#c3ccd6'
   const t = kind === 'all' || kind === 'outline' || kind === 'top'
   const b = kind === 'all' || kind === 'outline' || kind === 'bottom'
   const l = kind === 'all' || kind === 'outline' || kind === 'left'
@@ -1018,7 +1018,7 @@ function toolbarHtml (st) {
         ribbonToggle('bold', 'bold-text', '加粗', ui.bold),
         ribbonToggle('italic', 'italic-text', '斜体', ui.italic),
         ribbonToggle('underline', 'underline-text', '下划线', ui.underline),
-        colorMenuTool('fontColor', 'text-color', '字体颜色', ui.fontColor, '#1d2d3e'),
+        colorMenuTool('fontColor', 'text-color', '字体颜色', ui.fontColor, 'var(--sapInformationElementColor, #1d2d3e)'),
         colorMenuTool('fillColor', 'palette', '填充颜色', ui.fillColor, '#ffffff'),
       )}
       ${ribbonGroup(
@@ -1697,7 +1697,7 @@ function bind (root, st, host) {
   const view = host?.__rptDesignerNativeView
   bindElementExplorer(root, st, host)
   if (view === 'content') {
-    bindSheetToolbar(root, st)
+    bindSheetToolbar(root, st, host)
     initSpreadComponent(root, st)
   } else if (view === 'propertyMeta' || view === 'propertyCell' || view === 'propertyElement') {
     bindPropertyPage(root, st, host, view)
@@ -2024,7 +2024,7 @@ function parseDragElement (dt) {
     try {
       const raw = dt.getData(mime)
       if (raw) { const p = JSON.parse(raw); if (p && p.code) return p }
-    } catch (_) {}
+    } catch (_) { /* 载荷非合法 JSON：按空处理 */ }
   }
   const txt = (() => { try { return dt.getData('text/plain') } catch (_) { return '' } })()
   return txt ? { code: txt } : null
@@ -2068,8 +2068,8 @@ function badgeViewportSig (st) {
   if (!ws) return ''
   const hr = spreadHostEl(sheet)?.getBoundingClientRect?.() || {}
   let top = 0; let left = 0
-  try { top = ws.getViewportTopRow ? ws.getViewportTopRow(1) : 0 } catch (_) {}
-  try { left = ws.getViewportLeftColumn ? ws.getViewportLeftColumn(1) : 0 } catch (_) {}
+  try { top = ws.getViewportTopRow ? ws.getViewportTopRow(1) : 0 } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
+  try { left = ws.getViewportLeftColumn ? ws.getViewportLeftColumn(1) : 0 } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
   return `${(typeof ws.name === 'function' ? ws.name() : '')}|${top}|${left}|${Math.round(hr.width || 0)}|${Math.round(hr.height || 0)}|${Math.round(hr.left || 0)}|${Math.round(hr.top || 0)}`
 }
 
@@ -2111,12 +2111,12 @@ function renderBadges (st) {
     if (!p) continue
     // 合并单元格：非锚点子格跳过（锚点整块盖）。
     let span = null
-    try { span = ws.getSpan ? ws.getSpan(p.row, p.col) : null } catch (_) {}
+    try { span = ws.getSpan ? ws.getSpan(p.row, p.col) : null } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
     if (span && (span.row !== p.row || span.col !== p.col)) continue
     if (!span && (p.row < r0 || p.row > r1 || p.col < c0 || p.col > c1)) continue
     let rect = null
     // 合并块用 4 参重载取整块矩形；普通格取单格。
-    try { rect = span ? ws.getCellRect(p.row, p.col, span.rowCount || 1, span.colCount || 1) : ws.getCellRect(p.row, p.col) } catch (_) {}
+    try { rect = span ? ws.getCellRect(p.row, p.col, span.rowCount || 1, span.colCount || 1) : ws.getCellRect(p.row, p.col) } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
     if (!rect || !(rect.width > 0) || !(rect.height > 0)) continue
     // 徽标物理盖住整格，只能显一个 → 优先级：计算>校验>元素（计算公式优先级高于元素，都有则显计算）。
     // calc+check 都有且都开 → 合并态 <算-校>。
@@ -2147,7 +2147,7 @@ function renderBadges (st) {
 /** rAF 去抖触发一次重绘（多事件合并成一帧）。 */
 function scheduleBadges (st) {
   if (st.__badgeRaf) return
-  st.__badgeRaf = requestAnimationFrame(() => { st.__badgeRaf = null; try { renderBadges(st) } catch (_) {} })
+  st.__badgeRaf = requestAnimationFrame(() => { st.__badgeRaf = null; try { renderBadges(st) } catch (_) { /* 防御性忽略 */ } })
 }
 
 /** 自停轮询跟随滚动/尺寸（原生事件覆盖不全）：视口签名变化才重绘；两开关全关或 content 宿主死→自杀。 */
@@ -2171,10 +2171,10 @@ function bindBadgeEvents (sheet, st, tries = 0) {
   wb.__rdBadgeBound = true
   const on = () => scheduleBadges(st)
   const EVENTS = ['TopRowChanged', 'LeftColumnChanged', 'ColumnWidthChanged', 'RowHeightChanged', 'ValueChanged', 'RangeChanged', 'CellChanged', 'ClipboardPasted']
-  for (const name of EVENTS) { try { wb.bind(name, on) } catch (_) {} }
-  const bindSheet = (ws) => { if (!ws || ws.__rdBadgeBound) return; ws.__rdBadgeBound = true; for (const name of EVENTS) { try { ws.bind(name, on) } catch (_) {} } }
+  for (const name of EVENTS) { try { wb.bind(name, on) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ } }
+  const bindSheet = (ws) => { if (!ws || ws.__rdBadgeBound) return; ws.__rdBadgeBound = true; for (const name of EVENTS) { try { ws.bind(name, on) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ } } }
   try { const cnt = wb.getSheetCount?.() || 1; for (let i = 0; i < cnt; i++) bindSheet(wb.getSheet?.(i)) } catch (_) { bindSheet(wb.getActiveSheet?.()) }
-  try { wb.bind('ActiveSheetChanged', () => { bindSheet(wb.getActiveSheet?.()); on() }) } catch (_) {}
+  try { wb.bind('ActiveSheetChanged', () => { bindSheet(wb.getActiveSheet?.()); on() }) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ }
   if (!st.__badgeResizeBound) { st.__badgeResizeBound = true; window.addEventListener('resize', () => scheduleBadges(st)) }
 }
 
@@ -2240,7 +2240,7 @@ function toggleMergeSelection (sheet, st, root) {
       const spans = ws?.getSpans?.(ws.getRange(r0, c0, Math.max(1, s.rowCount || 1), Math.max(1, s.colCount || 1)))
       if (spans && spans.length) { hasSpan = true; break }
     }
-  } catch (_) {}
+  } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
   if (hasSpan) sheet.unmergeSelection?.()
   else sheet.mergeSelection?.()
   if (!st.__loading) markDirty(st, true)
@@ -2252,7 +2252,7 @@ function applyZoom (st, pct) {
   const p = Math.max(50, Math.min(200, Math.round(Number(pct) || 100)))
   st.sheetUi.zoom = p / 100
   const ws = liveSheetOf(st)?.getWorkbook?.()?.getActiveSheet?.()
-  try { ws?.zoom?.(p / 100) } catch (_) {}
+  try { ws?.zoom?.(p / 100) } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
   updateZoomControlAll(st)
   // 缩放改变 getCellRect → 徽标须重定位（缩放不改视口签名，poller 不会自发重绘，故显式触发）。
   scheduleBadges(st)
@@ -2286,7 +2286,7 @@ function applySheetUiStyle (sheet, st, patch = {}) {
   if (!sheet || typeof sheet.applySelectionStyle !== 'function') return
   const ui = st.sheetUi
   // 只发本次真正改的属性——尤其 backColor/foreColor 仅当用户改「填充色/字体色」时才带上。
-  // 否则加粗/对齐/换行等任意格式修改都会把 ui.fillColor(默认#ffffff)写成单元格底色→无填充格变银白。
+  // 否则加粗/对齐/换行等任意格式修改都会把 ui.fillColor(默认var(--sapList_Background, #ffffff))写成单元格底色→无填充格变银白。
   const style = {
     font: fontSpec(ui),
     hAlign: ui.align,
@@ -2317,8 +2317,8 @@ function syncSheetUiFromSelection (sheet, st) {
     valign: s.valign || st.sheetUi.valign || 'middle',
     fontFamily: readFamily || st.sheetUi.fontFamily || 'Arial',
     fontSize: s.fontSize || st.sheetUi.fontSize || '11',
-    fontColor: s.fontColor || st.sheetUi.fontColor || '#1d2d3e',
-    fillColor: s.fillColor || st.sheetUi.fillColor || '#ffffff',
+    fontColor: s.fontColor || st.sheetUi.fontColor || 'var(--sapInformationElementColor, #1d2d3e)',
+    fillColor: s.fillColor || st.sheetUi.fillColor || 'var(--sapList_Background, #ffffff)',
     wordWrap: !!s.wordWrap,
   })
   const fmt = Object.entries(NUMBER_FORMATS).find(([, pattern]) => pattern === (s.format || ''))
@@ -2386,10 +2386,10 @@ function updateToolbarControls (root, st) {
   // 颜色按钮的当前色条回显
   root.querySelectorAll('[data-color-toggle]').forEach((btn) => {
     const field = btn.getAttribute('data-color-toggle')
-    const val = ui[field] || (field === 'fillColor' ? '#ffffff' : '#1d2d3e')
+    const val = ui[field] || (field === 'fillColor' ? 'var(--sapList_Background, #ffffff)' : 'var(--sapInformationElementColor, #1d2d3e)')
     btn.style.setProperty('--rd-swatch', val)
     const custom = root.querySelector(`[data-color-custom="${field}"]`)
-    if (custom && custom !== focused) { try { custom.value = /^#([0-9a-f]{6})$/i.test(val) ? val : (field === 'fillColor' ? '#ffffff' : '#1d2d3e') } catch (_) {} }
+    if (custom && custom !== focused) { try { custom.value = /^#([0-9a-f]{6})$/i.test(val) ? val : (field === 'fillColor' ? 'var(--sapList_Background, #ffffff)' : 'var(--sapInformationElementColor, #1d2d3e)') } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ } }
   })
   const sheet = sheetElOf(root)
   const history = sheet?.getHistoryState?.() || {}
@@ -2663,7 +2663,7 @@ async function saveLayout (sheet, st, root) {
   const wbJson = sheet.getWorkbookJson ? sheet.getWorkbookJson() : (sheet.getWorkbook?.()?.toJSON?.() || null)
   if (!wbJson) { showCmxToast('保存失败：工作簿未就绪', { level: 'error' }); return }
   // 缩放是会话级视图偏好，不随报表保存：剔除各 sheet 的 zoomFactor，令 BLOB 恒 100%。
-  try { const shs = wbJson.sheets || {}; for (const n of Object.keys(shs)) { if (shs[n] && 'zoomFactor' in shs[n]) delete shs[n].zoomFactor } } catch (_) {}
+  try { const shs = wbJson.sheets || {}; for (const n of Object.keys(shs)) { if (shs[n] && 'zoomFactor' in shs[n]) delete shs[n].zoomFactor } } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
   const proj = deriveProjection(sheet, st)
   const payload = {
     version: st.props.version || '',
@@ -3099,7 +3099,8 @@ function setupHistoryMenus (root, st, sheet) {
   document.addEventListener('click', () => closeHistoryMenus(root))
 }
 
-function setupRibbonOverflow (root) {
+function setupRibbonOverflow (root, host) {
+  const sig = host?.__renderAC?.signal
   const ribbon = root.querySelector('[data-rd-ribbon]')
   const main = root.querySelector('[data-rd-ribbon-main]')
   const more = root.querySelector('[data-rd-more]')
@@ -3136,13 +3137,15 @@ function setupRibbonOverflow (root) {
   if (typeof ResizeObserver === 'function') {
     const ro = new ResizeObserver(() => requestAnimationFrame(rebalance))
     ro.observe(ribbon)
+    sig?.addEventListener('abort', () => ro.disconnect())
   } else {
-    window.addEventListener('resize', rebalance)
+    window.addEventListener('resize', rebalance, { signal: sig })
   }
   requestAnimationFrame(rebalance)
 }
 
-function bindSheetToolbar (root, st) {
+function bindSheetToolbar (root, st, host) {
+  const sig = host?.__renderAC?.signal // 本轮渲染的监听生命周期；重绘时随 AC abort 一并撤销
   const sheet = sheetElOf(root)
   if (!sheet) return
   root.querySelectorAll('[data-sheet-cmd]').forEach((btn) => {
@@ -3215,7 +3218,7 @@ function bindSheetToolbar (root, st) {
   setupBorderMenu(root, st, sheet)
   setupColorMenus(root, st, sheet)
   setupReportMenu(root, st, sheet)
-  setupRibbonOverflow(root)
+  setupRibbonOverflow(root, host)
 }
 
 /**
@@ -3247,7 +3250,7 @@ function bindFormulaBar (root, st) {
     if (ev.key === 'Enter') { ev.preventDefault(); gotoFromNamebox() }
     else if (ev.key === 'Escape') { ev.preventDefault(); nb.value = st.selectedRange || st.selectedCell || 'A1'; nb.blur() }
   })
-  nb?.addEventListener('focus', () => { try { nb.select() } catch {} })
+  nb?.addEventListener('focus', () => { try { nb.select() } catch { /* 焦点/选区 API 兼容性差异：忽略 */ } })
   nb?.addEventListener('change', gotoFromNamebox)
 
   // —— 公式输入框：回车/失焦提交，Esc 还原 ——
@@ -3279,7 +3282,7 @@ function gotoCellOrRange (st, addr) {
     if (typeof ws.setSelection === 'function') ws.setSelection(box.r1, box.c1, rows, cols)
     // 滚动到可见（showCell 位置参数：3=左上，1=居中；用字面量避免依赖组件私有的 GC 全局）
     if (typeof ws.showCell === 'function') {
-      try { ws.showCell(box.r1, box.c1, 3, 3) } catch { try { ws.showCell(box.r1, box.c1) } catch {} }
+      try { ws.showCell(box.r1, box.c1, 3, 3) } catch { try { ws.showCell(box.r1, box.c1) } catch { /* 表格内核差异导致该调用被拒：降级跳过 */ } }
     }
   } catch { return false }
   // 立即回填本地状态（轮询也会跟上）
@@ -3324,10 +3327,10 @@ function fxSyncFromSelection (root, st) {
   const p = parseA1(addr)
   if (!ws || !p) { fx.value = ''; return }
   let formula = null
-  try { formula = ws.getFormula ? ws.getFormula(p.row, p.col) : null } catch {}
+  try { formula = ws.getFormula ? ws.getFormula(p.row, p.col) : null } catch { /* 表格内核差异导致该调用被拒：降级跳过 */ }
   if (formula) { fx.value = `=${formula}`; return }
   let val = ''
-  try { val = ws.getValue ? ws.getValue(p.row, p.col) : '' } catch {}
+  try { val = ws.getValue ? ws.getValue(p.row, p.col) : '' } catch { /* 表格内核差异导致该调用被拒：降级跳过 */ }
   fx.value = val == null ? '' : String(val)
 }
 
@@ -3717,7 +3720,7 @@ function onFxCommit (root, st, detail) {
 function openFxPanel (root, st, anchorEl) {
   const initAddr = st.selectedCell || 'A1'
   let anchorRect = null
-  try { if (anchorEl && anchorEl.getBoundingClientRect) { const r = anchorEl.getBoundingClientRect(); anchorRect = { left: r.left, bottom: r.bottom, top: r.top } } } catch (_) {}
+  try { if (anchorEl && anchorEl.getBoundingClientRect) { const r = anchorEl.getBoundingClientRect(); anchorRect = { left: r.left, bottom: r.bottom, top: r.top } } } catch (_) { /* 防御性忽略 */ }
   st.fxPanel = { open: true, expr: '', target: initAddr, search: '', tab: 'fetch', sub: null, pos: null, caret: null, edited: false, anchorRect }
   st.fxPanel.expr = readCellExpr(st, initAddr) // 打开即回显当前格已有公式（双向联动）
   let host = root.querySelector('.rd-fxp-mask')
@@ -3757,7 +3760,7 @@ function readCellExpr (st, addr) {
   if (cm && cm.calcFormula) return String(cm.calcFormula).replace(/^=+/, '')
   const ws = liveSheetOf(st)?.getWorkbook?.()?.getActiveSheet?.()
   const p = parseA1(addr)
-  if (ws && p) { try { const fx = ws.getFormula(p.row, p.col); if (fx) return String(fx).replace(/^=+/, '') } catch {} }
+  if (ws && p) { try { const fx = ws.getFormula(p.row, p.col); if (fx) return String(fx).replace(/^=+/, '') } catch { /* 表格内核差异导致该调用被拒：降级跳过 */ } }
   return ''
 }
 
@@ -3854,7 +3857,7 @@ function fxInsertAtCursor (root, st, text, inside) {
   if (inside) { const open = text.indexOf('('); if (open >= 0) caret = s + open + 1 }
   st.fxPanel.caret = caret
   ta.focus()
-  try { ta.setSelectionRange(caret, caret) } catch {}
+  try { ta.setSelectionRange(caret, caret) } catch { /* 焦点/选区 API 兼容性差异：忽略 */ }
 }
 
 /** 面板交互（每次 renderFxPanel 后重绑，只在 overlay 内 query）。非模态：不点外部关。 */
@@ -3933,7 +3936,7 @@ function bindFxPanel (root, st) {
     search.addEventListener('input', () => {
       fp.search = search.value
       renderFxPanel(root, st)
-      requestAnimationFrame(() => { const nx = root.querySelector('.rd-fxp-mask [data-fxp-search]'); if (nx) { nx.focus(); const n = nx.value.length; try { nx.setSelectionRange(n, n) } catch {} } })
+      requestAnimationFrame(() => { const nx = root.querySelector('.rd-fxp-mask [data-fxp-search]'); if (nx) { nx.focus(); const n = nx.value.length; try { nx.setSelectionRange(n, n) } catch { /* 焦点/选区 API 兼容性差异：忽略 */ } } })
     })
   }
   // 运算符/括号
@@ -4072,7 +4075,7 @@ function setupBorderMenu (root, st, sheet) {
     const colorBtn = ev.target.closest?.('[data-border-color]')
     if (colorBtn) {
       ev.stopPropagation()
-      st.borderColor = colorBtn.getAttribute('data-border-color') || '#8a8f94'
+      st.borderColor = colorBtn.getAttribute('data-border-color') || 'var(--sapGroup_ContentBorderColor, #8a8f94)'
       menu?.querySelectorAll('[data-border-color]').forEach((b) => b.classList.toggle('on', b === colorBtn))
       return
     }
@@ -4094,8 +4097,8 @@ function setupBorderMenu (root, st, sheet) {
     if (!st.__loading) markDirty(st, true)
     close()
   })
-  document.addEventListener('click', close)
-  window.addEventListener('resize', close)
+  document.addEventListener('click', close, { signal: sig })
+  window.addEventListener('resize', close, { signal: sig })
 }
 
 /**
@@ -4168,7 +4171,7 @@ function setupColorMenus (root, st, sheet) {
     menu?.addEventListener('click', (ev) => ev.stopPropagation())
   })
   document.addEventListener('click', closeAll)
-  window.addEventListener('resize', closeAll)
+  window.addEventListener('resize', closeAll, { signal: sig })
 }
 
 /** 导出报表版式为 JSON 文件下载（getWorkbookJson → Blob → a[download]）。 */
@@ -4183,7 +4186,7 @@ function exportReportJson (sheet, st) {
     a.href = url; a.download = name
     document.body.appendChild(a); a.click()
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url) }, 0)
-  } catch (_) {}
+  } catch (_) { /* 下载收尾清理：忽略 */ }
 }
 
 /** 顶栏「报表 ▾」split button 下拉交互（照抄 setupBorderMenu 的 fixed 弹层范式）。 */
@@ -4218,8 +4221,8 @@ function setupReportMenu (root, st, sheet) {
   menu.querySelectorAll('[data-sheet-cmd]').forEach((btn) => btn.addEventListener('click', () => {
     setTimeout(close, 0)
   }))
-  document.addEventListener('click', close)
-  window.addEventListener('resize', close)
+  document.addEventListener('click', close, { signal: sig })
+  window.addEventListener('resize', close, { signal: sig })
 }
 
 
@@ -4241,7 +4244,7 @@ function bindElementExplorer (root, st, host) {
           if (next) {
             next.focus()
             const len = next.value.length
-            try { next.setSelectionRange(len, len) } catch {}
+            try { next.setSelectionRange(len, len) } catch { /* 焦点/选区 API 兼容性差异：忽略 */ }
           }
         })
       }, 120)
@@ -4274,7 +4277,7 @@ function bindElementExplorer (root, st, host) {
     item.addEventListener('dragstart', (e) => {
       const raw = item.getAttribute('data-element-drag') || '{}'
       let payload = {}
-      try { payload = JSON.parse(raw) } catch {}
+      try { payload = JSON.parse(raw) } catch { /* 载荷非合法 JSON：按空处理 */ }
       if (payload.code) {
         st.selectedElementCode = String(payload.code)
         refreshInstance(st, (view) => view === 'propertyElement')
@@ -4309,7 +4312,7 @@ function collectDeep (root, selector, out = []) {
         if (el.shadowRoot) collectDeep(el.shadowRoot, selector, out)
       })
     }
-  } catch {}
+  } catch { /* 防御性忽略 */ }
   return out
 }
 
@@ -4318,7 +4321,7 @@ function activatePropertyElementView (st, source) {
   const detail = { area: 'property', view: 'propertyElement', viewId }
   const workspace = source?.workspace || source?.host?.workspace || findWorkspaceFromDom(source)
   if (activateWorkspaceView(workspace, detail)) return
-  try { source?.dispatchEvent?.(new CustomEvent('cmx-workspace-activate-view', { detail, bubbles: true, composed: true })) } catch {}
+  try { source?.dispatchEvent?.(new CustomEvent('cmx-workspace-activate-view', { detail, bubbles: true, composed: true })) } catch { /* 事件派发失败不影响主流程：忽略 */ }
 
   const tryActivate = () => {
     const embeds = collectDeep(document, 'cmx-embed-page')
@@ -4329,12 +4332,12 @@ function activatePropertyElementView (st, source) {
         embed.setAttribute('initial-view', viewId)
         if (typeof embed._activate === 'function') embed._activate(viewId)
         return true
-      } catch {}
+      } catch { /* 防御性忽略 */ }
     }
     const btns = collectDeep(document, `[data-view-id="${viewId}"],[data-view="${viewId}"]`)
     const btn = btns.find((el) => typeof el.click === 'function')
     if (btn) {
-      try { btn.click(); return true } catch {}
+      try { btn.click(); return true } catch { /* 防御性忽略 */ }
     }
     return false
   }
@@ -4387,9 +4390,9 @@ function activateWorkspaceView (workspace, detail) {
     try {
       fn.apply(path.includes('.') ? workspace.viewManager : workspace, args)
       return true
-    } catch {}
+    } catch { /* 防御性忽略 */ }
   }
-  try { workspace.dispatchEvent?.(new CustomEvent('cmx-workspace-activate-view', { detail })) } catch {}
+  try { workspace.dispatchEvent?.(new CustomEvent('cmx-workspace-activate-view', { detail })) } catch { /* 事件派发失败不影响主流程：忽略 */ }
   return false
 }
 
@@ -4400,13 +4403,13 @@ function ensureSpreadElementRegistered () {
     try {
       customElements.define('cmx-spreadjs-sheet', C.CmxSpreadjsSheet)
       return true
-    } catch {}
+    } catch { /* 组件重复注册/预载：忽略 */ }
   }
   // 组件走懒加载：cmx-data-comp 的 index.js 用 MutationObserver 监听 document 首次出现 sheet 标签
   // 才动态 import 注册。但那个 observer 用 document.querySelector——穿不透 Shadow DOM。本设计器的
   // <cmx-spreadjs-sheet> 挂在 native-page 的 shadowRoot 里，observer 永远看不到 → 永不注册 → 空白网格。
   // 故此处主动调 barrel 暴露的 preloadSheetComponents() 触发懒加载（约 26ms 内完成注册）。
-  try { C.preloadSheetComponents?.() } catch {}
+  try { C.preloadSheetComponents?.() } catch { /* 组件重复注册/预载：忽略 */ }
   return false
 }
 
@@ -4428,14 +4431,14 @@ function bindWorkbookEditEvents (sheet, st, tries = 0) {
   // 含行高/列宽调整（设计器改版式，ColumnWidthChanged/RowHeightChanged 也算修改）
   const EVENTS = ['ValueChanged', 'EditEnded', 'ClipboardPasted', 'RangeChanged', 'CellChanged',
     'DragDropBlockCompleted', 'DragFillBlockCompleted', 'ColumnWidthChanged', 'RowHeightChanged']
-  for (const name of EVENTS) { try { wb.bind(name, onEdit) } catch (_) {} }
+  for (const name of EVENTS) { try { wb.bind(name, onEdit) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ } }
   const bindSheet = (ws) => {
     if (!ws || ws.__rdEditBound) return
     ws.__rdEditBound = true
-    for (const name of EVENTS) { try { ws.bind(name, onEdit) } catch (_) {} }
+    for (const name of EVENTS) { try { ws.bind(name, onEdit) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ } }
   }
   try { const cnt = wb.getSheetCount?.() || 1; for (let i = 0; i < cnt; i++) bindSheet(wb.getSheet?.(i)) } catch (_) { bindSheet(wb.getActiveSheet?.()) }
-  try { wb.bind('ActiveSheetChanged', () => bindSheet(wb.getActiveSheet?.())) } catch (_) {}
+  try { wb.bind('ActiveSheetChanged', () => bindSheet(wb.getActiveSheet?.())) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ }
 }
 
 /**
@@ -4471,14 +4474,14 @@ function bindSelectionSync (sheet, st, root, tries = 0) {
     updateFxPanelTarget(st)
   }
   const EVENTS = ['SelectionChanged', 'LeaveCell', 'EnterCell']
-  for (const name of EVENTS) { try { wb.bind(name, onSelect) } catch (_) {} }
+  for (const name of EVENTS) { try { wb.bind(name, onSelect) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ } }
   const bindSheet = (ws) => {
     if (!ws || ws.__rdSelBound) return
     ws.__rdSelBound = true
-    for (const name of EVENTS) { try { ws.bind(name, onSelect) } catch (_) {} }
+    for (const name of EVENTS) { try { ws.bind(name, onSelect) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ } }
   }
   try { const cnt = wb.getSheetCount?.() || 1; for (let i = 0; i < cnt; i++) bindSheet(wb.getSheet?.(i)) } catch (_) { bindSheet(wb.getActiveSheet?.()) }
-  try { wb.bind('ActiveSheetChanged', () => bindSheet(wb.getActiveSheet?.())) } catch (_) {}
+  try { wb.bind('ActiveSheetChanged', () => bindSheet(wb.getActiveSheet?.())) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ }
   // 兜底轮询：编程选区变化 + 部分真机交互 SelectionChanged 不触发，靠比对 getActiveAddr 捕获。
   if (!st.__rdSelPoll) {
     st.__rdSelPoll = setInterval(() => {
@@ -4495,7 +4498,7 @@ function updateToolbarControlsAll (st) {
   for (const host of Array.from(st.hosts)) {
     if (!host || !host.isConnected || host.__rptDesignerNativeView !== 'content') continue
     const root = host.renderRoot || host.shadowRoot?.querySelector('.native-page-root')
-    if (root) { try { updateToolbarControls(root, st) } catch (_) {} }
+    if (root) { try { updateToolbarControls(root, st) } catch (_) { /* 防御性忽略 */ } }
   }
 }
 
@@ -4517,7 +4520,7 @@ function bindElementDrop (root, sheet, st) {
   stage.addEventListener('dragover', (e) => {
     if (!isElementDrag(e.dataTransfer)) return
     e.preventDefault() // 允许 drop（这是 dragover 里唯一必须做的事）
-    try { e.dataTransfer.dropEffect = 'copy' } catch (_) {}
+    try { e.dataTransfer.dropEffect = 'copy' } catch (_) { /* 防御性忽略 */ }
     if (!stage.classList.contains('rd-drop-hot')) stage.classList.add('rd-drop-hot')
     // 节流的落点格提示：只更新一个轻量 DOM 标签(不碰 SpreadJS 画布/不改选区)，最多 ~12fps。
     const now = Date.now()
@@ -4580,7 +4583,7 @@ function initSpreadComponent (root, st) {
     const t0 = Date.now()
     const tick = () => {
       let wb = null
-      try { wb = sheet.getWorkbook && sheet.getWorkbook() } catch (_) {}
+      try { wb = sheet.getWorkbook && sheet.getWorkbook() } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
       if (wb) { resolve(wb); return }
       if (!sheet.isConnected || Date.now() - t0 > 20000) { resolve(null); return } // 宿主断开/超时兑底，不永久挂起
       setTimeout(tick, 60)
@@ -4611,7 +4614,7 @@ function initSpreadComponent (root, st) {
       bindBadgeEvents(sheet, st) // 公式徽标：绑滚动/尺寸事件跟随 + 初次重绘（开关可能已开，如切页重挂）
       renderBadges(st)
       if (st.sheetUi.showCalc || st.sheetUi.showCheck || st.sheetUi.showElement) startBadgePoll(st)
-      if ((st.sheetUi.zoom || 1) !== 1) { try { sheet.getWorkbook?.()?.getActiveSheet?.()?.zoom?.(st.sheetUi.zoom) } catch (_) {} } // 会话级缩放：加载后保持本会话手感
+      if ((st.sheetUi.zoom || 1) !== 1) { try { sheet.getWorkbook?.()?.getActiveSheet?.()?.zoom?.(st.sheetUi.zoom) } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ } } // 会话级缩放：加载后保持本会话手感
       syncSheetUiFromSelection(sheet, st)
       updateToolbarControls(root, st)
     } catch (err) {
@@ -4680,6 +4683,8 @@ function mount (ctx, view) {
   const render = () => {
     const root = host?.renderRoot || host?.shadowRoot?.querySelector('.native-page-root')
     if (!root || !root.isConnected) return
+    if (host.__renderAC) host.__renderAC.abort() // 重绘前撤销上一轮 document/window 监听（防重绘累积泄漏）
+    host.__renderAC = new AbortController()
       root.innerHTML = `<style>${styleCss()}</style>${viewHtml(view, st)}`
     bind(root, st, host)
   }
@@ -4697,6 +4702,8 @@ function refreshInstance (st, predicate) {
     if (!root) continue
     const view = host.__rptDesignerNativeView || 'content'
     if (predicate && !predicate(view)) continue
+    if (host.__renderAC) host.__renderAC.abort()
+    host.__renderAC = new AbortController()
     root.innerHTML = `<style>${styleCss()}</style>${viewHtml(view, st)}`
     bind(root, st, host)
   }
@@ -4777,7 +4784,7 @@ async function rcOpenDialog (reportCode, root) {
     <div class="rd-rc-body">
       <table class="rd-rc-table">
         <thead><tr><th>单据类型</th><th>组织</th><th>目标类型</th><th>目标句柄</th><th>传输</th><th>启用</th><th>操作</th></tr></thead>
-        <tbody data-rc-tbody><tr><td colspan="7" style="text-align:center;color:#999;padding:16px">输入单据类型后点「查询」</td></tr></tbody>
+        <tbody data-rc-tbody><tr><td colspan="7" style="text-align:center;color:var(--sapContent_LabelColor, #999999);padding:16px">输入单据类型后点「查询」</td></tr></tbody>
       </table>
     </div>
   </div>`
@@ -4787,15 +4794,15 @@ async function rcOpenDialog (reportCode, root) {
     const s = document.createElement('style')
     s.id = 'rd-rc-style'
     s.textContent = `.rd-rc-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:center;justify-content:center}
-.rd-rc-panel{background:#fff;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.22);width:820px;max-width:96vw;max-height:80vh;display:flex;flex-direction:column;overflow:hidden}
+.rd-rc-panel{background:var(--sapList_Background, #ffffff);border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.22);width:820px;max-width:96vw;max-height:80vh;display:flex;flex-direction:column;overflow:hidden}
 .rd-rc-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #e5e7eb;font-weight:600;font-size:15px}
 .rd-rc-close{background:none;border:none;cursor:pointer;font-size:18px;color:#6b7280;line-height:1;padding:2px 6px}
-.rd-rc-close:hover{color:#111}
-.rd-rc-toolbar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid #f0f0f0;flex-wrap:wrap}
+.rd-rc-close:hover{color:var(--sapTextColor, #111111)}
+.rd-rc-toolbar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--sapGroup_ContentBorderColor, #f0f0f0);flex-wrap:wrap}
 .rd-rc-body{overflow:auto;flex:1;padding:0 16px 16px}
 .rd-rc-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
-.rd-rc-table th,.rd-rc-table td{padding:7px 10px;border-bottom:1px solid #f0f0f0;text-align:left;white-space:nowrap}
-.rd-rc-table th{background:#f8f9fa;font-weight:600;color:#374151}
+.rd-rc-table th,.rd-rc-table td{padding:7px 10px;border-bottom:1px solid var(--sapGroup_ContentBorderColor, #f0f0f0);text-align:left;white-space:nowrap}
+.rd-rc-table th{background:#f8f9fa;font-weight:600;color:var(--sapInformationElementColor, #374151)}
 .rd-rc-table tr:hover td{background:#f5f7ff}`
     document.head.appendChild(s)
   }
@@ -4811,16 +4818,16 @@ async function rcOpenDialog (reportCode, root) {
 
   const loadList = async () => {
     const key = keyInput.value.trim()
-    if (!key) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:16px">请输入单据类型</td></tr>'; return }
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:16px">加载中…</td></tr>'
+    if (!key) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--sapContent_LabelColor, #999999);padding:16px">请输入单据类型</td></tr>'; return }
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--sapContent_LabelColor, #999999);padding:16px">加载中…</td></tr>'
     try {
       const data = await apiJson(`/api/report-source-bindings/${encodeURIComponent(key)}`)
       const list = data?.bindings || []
       tbody.innerHTML = list.length
         ? list.map(rcRowHtml).join('')
-        : '<tr><td colspan="7" style="text-align:center;color:#999;padding:16px">暂无绑定，点「新增绑定」添加</td></tr>'
+        : '<tr><td colspan="7" style="text-align:center;color:var(--sapContent_LabelColor, #999999);padding:16px">暂无绑定，点「新增绑定」添加</td></tr>'
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#c00;padding:16px">加载失败：${rcEsc(err?.message || String(err))}</td></tr>`
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--sapNegativeTextColor, #cc0000);padding:16px">加载失败：${rcEsc(err?.message || String(err))}</td></tr>`
     }
   }
 
@@ -4877,16 +4884,16 @@ function rcOpenForm (init, onSaved) {
       <button class="rd-rc-close" type="button" aria-label="关闭">✕</button>
     </div>
     <div style="padding:16px;display:flex;flex-direction:column;gap:12px;overflow:auto">
-      <label class="rd-rc-field">单据类型 <span style="color:#c00">*</span>
-        <input name="sourceKey" type="text" value="${rcEsc(init.sourceKey || '')}" placeholder="如 gl_voucher" ${isEdit ? 'readonly style="background:#f5f5f5"' : ''}>
+      <label class="rd-rc-field">单据类型 <span style="color:var(--sapNegativeTextColor, #cc0000)">*</span>
+        <input name="sourceKey" type="text" value="${rcEsc(init.sourceKey || '')}" placeholder="如 gl_voucher" ${isEdit ? 'readonly style="background:var(--sapBackgroundColor, #f5f5f5)"' : ''}>
       </label>
-      <label class="rd-rc-field">组织 ID <span style="font-size:11px;color:#888">（空=默认兜底）</span>
+      <label class="rd-rc-field">组织 ID <span style="font-size:11px;color:var(--sapContent_LabelColor, #888888)">（空=默认兜底）</span>
         <input name="orgId" type="text" value="${rcEsc(init.orgId || '')}" placeholder="留空表示默认兜底绑定">
       </label>
-      <label class="rd-rc-field">目标类型 <span style="color:#c00">*</span>
+      <label class="rd-rc-field">目标类型 <span style="color:var(--sapNegativeTextColor, #cc0000)">*</span>
         <select name="targetKind">${rcKindOptions(init.targetKind || 'db_id')}</select>
       </label>
-      <label class="rd-rc-field">目标句柄 <span style="color:#c00">*</span>
+      <label class="rd-rc-field">目标句柄 <span style="color:var(--sapNegativeTextColor, #cc0000)">*</span>
         <input name="targetRef" type="text" value="${rcEsc(init.targetRef || '')}" placeholder="如 fico-bj 或 doc-gl-bj">
       </label>
       <label class="rd-rc-field">传输方式
@@ -4902,7 +4909,7 @@ function rcOpenForm (init, onSaved) {
         <input name="remark" type="text" value="${rcEsc(init.remark || '')}" placeholder="可选">
       </label>
     </div>
-    <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #f0f0f0">
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid var(--sapGroup_ContentBorderColor, #f0f0f0)">
       <button class="rd-sbtn" type="button" data-rc-cancel>取消</button>
       <button class="rd-sbtn primary" type="button" data-rc-submit>保存</button>
     </div>
@@ -4911,9 +4918,9 @@ function rcOpenForm (init, onSaved) {
   if (!document.getElementById('rd-rc-field-style')) {
     const s = document.createElement('style')
     s.id = 'rd-rc-field-style'
-    s.textContent = `.rd-rc-field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:#374151}
+    s.textContent = `.rd-rc-field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--sapLinkColor, #374151)}
 .rd-rc-field input,.rd-rc-field select{padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:13px;outline:none}
-.rd-rc-field input:focus,.rd-rc-field select:focus{border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.15)}`
+.rd-rc-field input:focus,.rd-rc-field select:focus{border-color:var(--sapInformationElementColor, #3b82f6);box-shadow:0 0 0 2px rgba(59,130,246,.15)}`
     document.head.appendChild(s)
   }
 

@@ -134,7 +134,7 @@ function markDirty (st, dirty) {
     const ca = findContentArea(host)
     if (!ca || typeof ca.setTabDirty !== 'function') continue
     const tabId = ownTabId(host) || (ca.getActiveTabId ? ca.getActiveTabId() : ca._activeTab)
-    if (tabId) { try { ca.setTabDirty(tabId, !!dirty); done = true } catch (_) {} }
+    if (tabId) { try { ca.setTabDirty(tabId, !!dirty); done = true } catch (_) { /* 防御性忽略 */ } }
   }
   return done
 }
@@ -159,7 +159,7 @@ function updateApplierTab (st) {
       if (textSpan) textSpan.textContent = label
       const rec = ca._tabs?.find((t) => t.id === activeId)
       if (rec) rec.text = label
-    } catch (_) {}
+    } catch (_) { /* 防御性忽略 */ }
   }
 }
 
@@ -248,7 +248,7 @@ function readCellExpr (st, addr) {
   if (cm && cm.calcFormula) return String(cm.calcFormula).replace(/^=+/, '')
   const ws = liveContentSheet(st)?.getWorkbook?.()?.getActiveSheet?.()
   const p = parseAddr(addr)
-  if (ws && p) { try { const f = ws.getFormula(p.row, p.col); if (f) return String(f).replace(/^=+/, '') } catch (_) {} }
+  if (ws && p) { try { const f = ws.getFormula(p.row, p.col); if (f) return String(f).replace(/^=+/, '') } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ } }
   return ''
 }
 
@@ -412,7 +412,7 @@ function styleCss () {
     .ra-host{height:100%;min-height:460px;border:0;border-radius:0;background:var(--sapTile_Background,#fff);box-shadow:none;overflow:hidden}
     .ra-spread{display:block;width:100%;height:100%;min-height:460px}
     .ra-prop{flex:1;min-height:0;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:10px}
-    .ra-hero{display:flex;gap:10px;align-items:center;border:1px solid var(--ra-border);border-radius:8px;background:linear-gradient(135deg,color-mix(in srgb,var(--ra-blue) 12%,var(--sapTile_Background,#fff)),var(--sapTile_Background,#fff));padding:12px}.ra-hero-ic{width:40px;height:40px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--ra-blue);color:#fff}.ra-hero-ic ui5-icon{width:1.35rem;height:1.35rem}.ra-hero b{display:block;font-size:15px}.ra-hero span{font-size:11px;color:var(--sapContent_LabelColor,#6a6d70)}
+    .ra-hero{display:flex;gap:10px;align-items:center;border:1px solid var(--ra-border);border-radius:8px;background:linear-gradient(135deg,color-mix(in srgb,var(--ra-blue) 12%,var(--sapTile_Background,#fff)),var(--sapTile_Background,#fff));padding:12px}.ra-hero-ic{width:40px;height:40px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--ra-blue);color: #fff}.ra-hero-ic ui5-icon{width:1.35rem;height:1.35rem}.ra-hero b{display:block;font-size:15px}.ra-hero span{font-size:11px;color:var(--sapContent_LabelColor,#6a6d70)}
     .ra-grid{display:grid;grid-template-columns:1fr;gap:6px}.ra-kv{border:1px solid var(--ra-border);border-radius:7px;background:var(--sapTile_Background,#fff);padding:7px 9px}.ra-kv span{display:block;font-size:10px;color:var(--sapContent_LabelColor,#6a6d70)}.ra-kv b{display:block;font-size:12px;word-break:break-word}
     .ra-sec{border:1px solid var(--ra-border);border-radius:8px;background:var(--sapTile_Background,#fff);padding:10px}.ra-sec>b{display:block;margin-bottom:7px;color:var(--ra-blue)}.ra-sec p{margin:0;color:var(--sapContent_LabelColor,#6a6d70);font-size:12px}
     .ra-empty{padding:18px;border:1px dashed var(--ra-border);border-radius:8px;background:var(--sapTile_Background,#fff);color:var(--sapContent_LabelColor,#6a6d70);text-align:center}
@@ -425,8 +425,8 @@ function styleCss () {
     .ra-fp-tag{font-size:9px;font-weight:800;padding:1px 5px;border-radius:4px}.ra-fp-tag.manual{background:color-mix(in srgb,#a855f7 16%,transparent);color:#a855f7}.ra-fp-tag.seed{background:color-mix(in srgb,var(--ra-accent,#0d9488) 14%,transparent);color:var(--ra-accent,#0d9488)}
     .ra-fp-del{width:24px;height:24px;border:0;border-radius:5px;background:transparent;color:var(--sapContent_IconColor,#8a94a0);cursor:pointer;display:inline-flex;align-items:center;justify-content:center}.ra-fp-del:hover{background:color-mix(in srgb,#ef4444 12%,transparent);color:#ef4444}
     .ra-fp-empty{text-align:center;color:var(--sapContent_LabelColor,#6a6d70);padding:14px!important;font-size:11px}
-    .ra-fp-acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}.ra-fp-acts .ra-btn{border:1px solid var(--ra-border)}.ra-fp-acts .ra-btn.primary{background:var(--ra-accent,#0d9488);color:#fff;border-color:var(--ra-accent,#0d9488)}
-    .ra-toast{position:absolute;left:50%;bottom:22px;transform:translate(-50%,14px);z-index:60;max-width:min(560px,88%);padding:10px 16px;border-radius:9px;background:#1d2d3e;color:#fff;font-size:12.5px;font-weight:600;box-shadow:0 12px 32px rgba(10,31,68,.34);opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;display:flex;align-items:center;gap:8px}.ra-toast.show{opacity:1;transform:translate(-50%,0)}.ra-toast[data-kind="success"]{background:linear-gradient(180deg,#12b56b,#0f9d5c)}.ra-toast[data-kind="warn"]{background:linear-gradient(180deg,#e0a336,#d98200)}.ra-toast[data-kind="error"]{background:linear-gradient(180deg,#e5544b,#c0392b)}
+    .ra-fp-acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}.ra-fp-acts .ra-btn{border:1px solid var(--ra-border)}.ra-fp-acts .ra-btn.primary{background:var(--ra-accent,#0d9488);color: #fff;border-color:var(--ra-accent,#0d9488)}
+    .ra-toast{position:absolute;left:50%;bottom:22px;transform:translate(-50%,14px);z-index:60;max-width:min(560px,88%);padding:10px 16px;border-radius:9px;background:var(--sapInformationElementColor, #1d2d3e);color:var(--sapGroup_ContentBorderColor, #ffffff);font-size:12.5px;font-weight:600;box-shadow:0 12px 32px rgba(10,31,68,.34);opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;display:flex;align-items:center;gap:8px}.ra-toast.show{opacity:1;transform:translate(-50%,0)}.ra-toast[data-kind="success"]{background:linear-gradient(180deg,var(--sapPositiveElementColor, #12b56b),var(--sapPositiveElementColor, #0f9d5c))}.ra-toast[data-kind="warn"]{background:linear-gradient(180deg,var(--sapCriticalElementColor, #e0a336),var(--sapCriticalElementColor, #d98200))}.ra-toast[data-kind="error"]{background:linear-gradient(180deg,var(--sapNegativeElementColor, #e5544b),var(--sapNegativeElementColor, #c0392b))}
     /* explorer：期间下拉（顶部标题区，高度与 content .ra-head 一致 46px）+ 组织详情 */
     .ra-explorer{overflow:hidden}
     .ra-period-row{height:46px;flex:0 0 auto;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--ra-border);background:var(--sapList_HeaderBackground,#f7f9fc)}
@@ -438,7 +438,7 @@ function styleCss () {
     .ra-select-caret{position:absolute;right:9px;top:50%;transform:translateY(-50%);width:.85rem;height:.85rem;color:var(--ra-blue);pointer-events:none}
     .ra-org-scroll{flex:1;min-height:0;overflow:auto}
     .ra-org-head{display:flex;align-items:center;gap:6px;padding:9px 10px 5px;font-size:11px;font-weight:700;color:var(--sapContent_LabelColor,#6a6d70);text-transform:uppercase;letter-spacing:.03em}.ra-org-head ui5-icon{width:.9rem;height:.9rem;color:var(--ra-blue)}
-    .ra-org-hero{display:flex;gap:9px;align-items:center;margin:0 10px 8px;border:1px solid var(--ra-border);border-radius:8px;background:linear-gradient(135deg,color-mix(in srgb,var(--ra-blue) 12%,var(--sapTile_Background,#fff)),var(--sapTile_Background,#fff));padding:10px}.ra-org-ic{width:34px;height:34px;flex:0 0 auto;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--ra-blue);color:#fff}.ra-org-ic ui5-icon{width:1.15rem;height:1.15rem}.ra-org-hero b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ra-org-hero span{font-size:11px;color:var(--sapContent_LabelColor,#6a6d70)}
+    .ra-org-hero{display:flex;gap:9px;align-items:center;margin:0 10px 8px;border:1px solid var(--ra-border);border-radius:8px;background:linear-gradient(135deg,color-mix(in srgb,var(--ra-blue) 12%,var(--sapTile_Background,#fff)),var(--sapTile_Background,#fff));padding:10px}.ra-org-ic{width:34px;height:34px;flex:0 0 auto;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--ra-blue);color: #fff}.ra-org-ic ui5-icon{width:1.15rem;height:1.15rem}.ra-org-hero b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ra-org-hero span{font-size:11px;color:var(--sapContent_LabelColor,#6a6d70)}
     .ra-org-grid{display:grid;grid-template-columns:1fr;gap:6px;padding:0 10px 10px}
   `
 }
@@ -761,7 +761,7 @@ function applyCellFormulas (sheet, st) {
       try {
         ws.setFormula(p.row, p.col, sanitizeExprForSpreadjs(String(cm.calcFormula).replace(/^=+/, '')))
         n++
-      } catch (_) {}
+      } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
     }
   }
   return n
@@ -795,7 +795,7 @@ function applyFloatExpansion (sheet, st, bundle) {
         if (!(c0 >= 0)) continue
         colIdxs.push(c0)
         // 列头写到第 1 行（row 0）
-        try { ws.setValue(0, c0, ci.header != null ? String(ci.header) : '') } catch (_) {}
+        try { ws.setValue(0, c0, ci.header != null ? String(ci.header) : '') } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
         for (const cell of (ci.cells || [])) {
           const r0 = Number(cell.row) - 1
           if (!(r0 >= 0)) continue
@@ -803,7 +803,7 @@ function applyFloatExpansion (sheet, st, bundle) {
           try {
             if (f.startsWith('=')) ws.setFormula(r0, c0, sanitizeExprForSpreadjs(f.replace(/^=+/, '')))
             else ws.setFormula(r0, c0, sanitizeExprForSpreadjs(f))
-          } catch (_) {}
+          } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
         }
         st.__floatColIndex[c0] = { colId: ci.colId, dimKeyPath: ci.dimKeyPath, regionCode: reg.regionCode, sheetCode: reg.sheetCode }
         n++
@@ -818,7 +818,7 @@ function applyFloatExpansion (sheet, st, bundle) {
       const rowType = inst.rowType || 'float'
       const level = Number(inst.levelNo) || 1
       // col A：行标题
-      try { ws.setValue(r0, 0, (inst.name != null ? String(inst.name) : '')) } catch (_) {}
+      try { ws.setValue(r0, 0, (inst.name != null ? String(inst.name) : '')) } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
       // 其余列：公式（后端已重定位坐标/替换维度，前端只需 sanitize 成 SpreadJS 语法）
       for (const c of (inst.cells || [])) {
         const p = parseAddr(`${c.col}${inst.physRow}`)
@@ -827,7 +827,7 @@ function applyFloatExpansion (sheet, st, bundle) {
         try {
           if (f.startsWith('=')) ws.setFormula(p.row, p.col, sanitizeExprForSpreadjs(f.replace(/^=+/, '')))
           else ws.setFormula(p.row, p.col, sanitizeExprForSpreadjs(f))
-        } catch (_) {}
+        } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
       }
       // 分级视觉：小计/合计加粗；A 列缩进（用 cellPadding，退化则前缀空格）
       try {
@@ -835,11 +835,11 @@ function applyFloatExpansion (sheet, st, bundle) {
           const style = ws.getStyle ? ws.getStyle(r0, 0) : null
           if (GC && GC.Spread && GC.Spread.Sheets) {
             const s = new GC.Spread.Sheets.Style(); s.font = 'bold 12px Arial'
-            for (let c = 0; c <= 3; c++) { try { ws.setStyle(r0, c, s) } catch (_) {} }
+            for (let c = 0; c <= 3; c++) { try { ws.setStyle(r0, c, s) } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ } }
           } else if (style && ws.setStyle) { /* 无 GC 全局：跳过样式，不阻断 */ }
         }
-        if (level > 1 && ws.getCell) { try { ws.getCell(r0, 0).textIndent(level - 1) } catch (_) {} }
-      } catch (_) {}
+        if (level > 1 && ws.getCell) { try { ws.getCell(r0, 0).textIndent(level - 1) } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ } }
+      } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
       st.__floatIndex[r0] = { rowId: inst.rowId, dimKeyPath: inst.dimKeyPath, regionCode: reg.regionCode, sheetCode: reg.sheetCode, rowType }
       n++
     }
@@ -901,19 +901,19 @@ function applyRowGrouping (ws, instances) {
       // 折叠按钮放在组的「上方」（我们的小计/合计 summary 行在明细之前）。
       // 内核方向：SpreadJS 用 rowOutlines.direction(0)；cmx-megasheet 用 sheet.summaryBelow=false
       //（汇总在首行，折叠隐藏其后明细）。两者都试，命中即生效。
-      try { ws.rowOutlines.direction && ws.rowOutlines.direction(0) } catch (_) {}
-      try { ws.summaryBelow = false } catch (_) {}
+      try { ws.rowOutlines.direction && ws.rowOutlines.direction(0) } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
+      try { ws.summaryBelow = false } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
       segs.forEach(([start0, count]) => {
-        if (count > 0 && start0 >= 0) { try { ws.rowOutlines.group(start0, count) } catch (_) {} }
+        if (count > 0 && start0 >= 0) { try { ws.rowOutlines.group(start0, count) } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ } }
       })
     } finally {
       if (wb && wb.resumePaint) wb.resumePaint()
     }
     // ★ 置 showRowOutline **在 group 之后**——它经 spread-compat 活代理触发 element.refreshOutlines()，
     //   而后者按 rowOutlines.maxLevel() 算大纲带宽度；分组前触发则带宽=0 不画（换 cmx-megasheet 后的顺序坑）。
-    try { if (wb && wb.options) wb.options.showRowOutline = true } catch (_) {}
+    try { if (wb && wb.options) wb.options.showRowOutline = true } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
     // 兜底：直呼 element.refreshOutlines()（spread-compat 的 ws._el 是宿主 element；SpreadJS 内核无此属性，跳过）。
-    try { if (ws._el && typeof ws._el.refreshOutlines === 'function') ws._el.refreshOutlines() } catch (_) {}
+    try { if (ws._el && typeof ws._el.refreshOutlines === 'function') ws._el.refreshOutlines() } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
   } catch (_) { /* 大纲失败不阻断渲染 */ }
 }
 
@@ -941,17 +941,17 @@ function applyColGrouping (ws, colIdxs) {
     try {
       // 折叠按钮放列组「左侧」（summary 在前）。SpreadJS 用 columnOutlines.direction(0)；
       // cmx-megasheet 用 sheet.summaryRight=false（汇总在首列）。两者都试。
-      try { ws.columnOutlines.direction && ws.columnOutlines.direction(0) } catch (_) {}
-      try { ws.summaryRight = false } catch (_) {}
+      try { ws.columnOutlines.direction && ws.columnOutlines.direction(0) } catch (_) { /* 防御性忽略 */ }
+      try { ws.summaryRight = false } catch (_) { /* 防御性忽略 */ }
       segs.forEach(([start, count]) => {
-        if (count > 0 && start >= 0) { try { ws.columnOutlines.group(start, count) } catch (_) {} }
+        if (count > 0 && start >= 0) { try { ws.columnOutlines.group(start, count) } catch (_) { /* 防御性忽略 */ } }
       })
     } finally {
       if (wb && wb.resumePaint) wb.resumePaint()
     }
     // ★ group 之后再置 showColumnOutline（触发 refreshOutlines 按 maxLevel 算带宽），同行大纲顺序坑。
-    try { if (wb && wb.options) wb.options.showColumnOutline = true } catch (_) {}
-    try { if (ws._el && typeof ws._el.refreshOutlines === 'function') ws._el.refreshOutlines() } catch (_) {}
+    try { if (wb && wb.options) wb.options.showColumnOutline = true } catch (_) { /* 防御性忽略 */ }
+    try { if (ws._el && typeof ws._el.refreshOutlines === 'function') ws._el.refreshOutlines() } catch (_) { /* 防御性忽略 */ }
   } catch (_) { /* 列大纲失败不阻断渲染 */ }
 }
 
@@ -974,7 +974,7 @@ function applyCellsToCanvas (sheet, st, cells) {
     valueMap[`${sheetName}!${String(r.cellRef).toUpperCase()}`] = v
     let hasFormula = false
     const p = parseAddr(r.cellRef)
-    if (ws && p) { try { hasFormula = !!ws.getFormula(p.row, p.col) } catch (_) {} }
+    if (ws && p) { try { hasFormula = !!ws.getFormula(p.row, p.col) } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ } }
     if (!hasFormula) plainValues[r.cellRef] = v
   }
   if (sheet.setReportValueMap) sheet.setReportValueMap(valueMap)                         // 公式格显真值 + 触发重算
@@ -1102,7 +1102,7 @@ async function loadReportMeta (st) {
     const url = `/api/report-design/reports/${enc(st.props.reportCode)}${st.props.version ? `?version=${enc(st.props.version)}` : ''}`
     const data = await apiJson(url)
     st.report = data?.report || null
-  } catch (_) {} finally {
+  } catch (_) { /* 防御性忽略 */ } finally {
     st.reportLoading = false
     refreshInstance(st, (v) => v === 'property')
   }
@@ -1116,11 +1116,11 @@ function ensureSpreadElementRegistered () {
   if (customElements.get('cmx-spreadjs-sheet')) return true
   const C = (typeof globalThis !== 'undefined' && globalThis.__cmxDataComp) || {}
   if (C.CmxSpreadjsSheet) {
-    try { customElements.define('cmx-spreadjs-sheet', C.CmxSpreadjsSheet); return true } catch {}
+    try { customElements.define('cmx-spreadjs-sheet', C.CmxSpreadjsSheet); return true } catch { /* 组件重复注册/预载：忽略 */ }
   }
   // 懒加载靠 index.js 的 MutationObserver（document.querySelector，穿不透 Shadow DOM）监听 sheet 标签首现。
   // 本页 <cmx-spreadjs-sheet> 挂在 native-page shadowRoot 内 → observer 看不到 → 永不注册。主动触发 preload。
-  try { C.preloadSheetComponents?.() } catch {}
+  try { C.preloadSheetComponents?.() } catch { /* 组件重复注册/预载：忽略 */ }
   return false
 }
 
@@ -1164,7 +1164,7 @@ function initSpread (root, st) {
     const t0 = Date.now()
     const tick = () => {
       let wb = null
-      try { wb = sheet.getWorkbook && sheet.getWorkbook() } catch (_) {}
+      try { wb = sheet.getWorkbook && sheet.getWorkbook() } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
       if (wb) { resolve(wb); return }
       if (!sheet.isConnected || Date.now() - t0 > 20000) { resolve(null); return } // 宿主断开/超时兜底，不永久挂起
       setTimeout(tick, 60)
@@ -1205,7 +1205,7 @@ function initSpread (root, st) {
       setTimeout(() => { st.__loading = false }, 300)
       bindWorkbookEditEvents(sheet, st) // 用户键盘编辑靠这个（组件只绑了 CellChanged，用户输入不触发）
       bindFxSelectionSync(sheet, st, root) // 公式栏名称框/内容框随选区联动
-      if ((st.zoom || 1) !== 1) { try { sheet.getWorkbook?.()?.getActiveSheet?.()?.zoom?.(st.zoom) } catch (_) {} } // 会话级缩放：加载后保持手感
+      if ((st.zoom || 1) !== 1) { try { sheet.getWorkbook?.()?.getActiveSheet?.()?.zoom?.(st.zoom) } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ } } // 会话级缩放：加载后保持手感
       updateApplierToolbar(root, st) // 撤销/重做初始可用态 + 缩放控件同步
       fxSyncFromSelection(root, st) // 公式栏初次回填（A1）：元素胶囊 + 公式（从 cellMap，元素已随 bundle 到位）
     } catch (err) {
@@ -1239,15 +1239,15 @@ function bindWorkbookEditEvents (sheet, st, tries = 0) {
   const onEdit = () => { if (!st.__loading) { markDirty(st, true); updateApplierToolbarAll(st) } }
   const EVENTS = ['ValueChanged', 'EditEnded', 'ClipboardPasted', 'RangeChanged', 'CellChanged', 'DragDropBlockCompleted', 'DragFillBlockCompleted']
   // workbook 级
-  for (const name of EVENTS) { try { wb.bind(name, onEdit) } catch (_) {} }
+  for (const name of EVENTS) { try { wb.bind(name, onEdit) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ } }
   // worksheet 级（部分编辑事件只在 sheet 上派发）——绑当前 + 后续所有 sheet
   const bindSheet = (ws) => {
     if (!ws || ws.__raEditBound) return
     ws.__raEditBound = true
-    for (const name of EVENTS) { try { ws.bind(name, onEdit) } catch (_) {} }
+    for (const name of EVENTS) { try { ws.bind(name, onEdit) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ } }
   }
   try { const cnt = wb.getSheetCount?.() || 1; for (let i = 0; i < cnt; i++) bindSheet(wb.getSheet?.(i)) } catch (_) { bindSheet(wb.getActiveSheet?.()) }
-  try { wb.bind('ActiveSheetChanged', () => bindSheet(wb.getActiveSheet?.())) } catch (_) {}
+  try { wb.bind('ActiveSheetChanged', () => bindSheet(wb.getActiveSheet?.())) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ }
 }
 
 function bind (root, st, view) {
@@ -1405,7 +1405,7 @@ function applyApplierZoom (root, st, pct) {
   const p = Math.max(50, Math.min(200, Math.round(Number(pct) || 100)))
   st.zoom = p / 100
   const sheet = root.querySelector('[data-ra-spread]')
-  try { sheet?.getWorkbook?.()?.getActiveSheet?.()?.zoom?.(p / 100) } catch (_) {}
+  try { sheet?.getWorkbook?.()?.getActiveSheet?.()?.zoom?.(p / 100) } catch (_) { /* 表格内核差异导致该调用被拒：降级跳过 */ }
   updateZoomControl(root, st)
 }
 
@@ -1553,7 +1553,7 @@ function gotoCellOrRange (sheet, st, addr) {
   try {
     ws.setActiveCell?.(box.r1, box.c1)
     ws.setSelection?.(box.r1, box.c1, rows, cols)
-    try { ws.showCell?.(box.r1, box.c1, 3, 3) } catch { try { ws.showCell?.(box.r1, box.c1) } catch {} }
+    try { ws.showCell?.(box.r1, box.c1, 3, 3) } catch { try { ws.showCell?.(box.r1, box.c1) } catch { /* 表格内核差异导致该调用被拒：降级跳过 */ } }
   } catch { return false }
   st.selectedCell = `${indexToCol(box.c1)}${box.r1 + 1}`
   st.selectedRange = rows === 1 && cols === 1 ? st.selectedCell : `${indexToCol(box.c1)}${box.r1 + 1}:${indexToCol(box.c2)}${box.r2 + 1}`
@@ -1593,10 +1593,10 @@ function fxSyncFromSelection (root, st) {
   const p = parseAddr(addr)
   if (!ws || !p) { fx.value = ''; return }
   let formula = null
-  try { formula = ws.getFormula ? ws.getFormula(p.row, p.col) : null } catch {}
+  try { formula = ws.getFormula ? ws.getFormula(p.row, p.col) : null } catch { /* 表格内核差异导致该调用被拒：降级跳过 */ }
   if (formula) { fx.value = `=${formula}`; return }
   let val = ''
-  try { val = ws.getValue ? ws.getValue(p.row, p.col) : '' } catch {}
+  try { val = ws.getValue ? ws.getValue(p.row, p.col) : '' } catch { /* 表格内核差异导致该调用被拒：降级跳过 */ }
   fx.value = val == null ? '' : String(val)
 }
 
@@ -1641,7 +1641,7 @@ function bindFormulaBar (root, st, sheet) {
     if (ev.key === 'Enter') { ev.preventDefault(); gotoNb() }
     else if (ev.key === 'Escape') { ev.preventDefault(); nb.value = st.selectedRange || st.selectedCell || 'A1'; nb.blur() }
   })
-  nb?.addEventListener('focus', () => { try { nb.select() } catch {} })
+  nb?.addEventListener('focus', () => { try { nb.select() } catch { /* 焦点/选区 API 兼容性差异：忽略 */ } })
   nb?.addEventListener('change', gotoNb)
   const submitFx = () => applyFxInput(sheet, st, root, fx?.value ?? '')
   fx?.addEventListener('keydown', (ev) => {
@@ -1733,9 +1733,9 @@ function bindFxSelectionSync (sheet, st, root, tries = 0) {
     fxSyncFromSelection(root, st)
   }
   const EVENTS = ['SelectionChanged', 'LeaveCell', 'EnterCell']
-  for (const name of EVENTS) { try { wb.bind(name, onSelect) } catch (_) {} }
-  try { const cnt = wb.getSheetCount?.() || 1; for (let i = 0; i < cnt; i++) { const ws = wb.getSheet?.(i); for (const name of EVENTS) { try { ws?.bind?.(name, onSelect) } catch (_) {} } } } catch (_) {}
-  try { wb.bind('ActiveSheetChanged', onSelect) } catch (_) {}
+  for (const name of EVENTS) { try { wb.bind(name, onSelect) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ } }
+  try { const cnt = wb.getSheetCount?.() || 1; for (let i = 0; i < cnt; i++) { const ws = wb.getSheet?.(i); for (const name of EVENTS) { try { ws?.bind?.(name, onSelect) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ } } } } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ }
+  try { wb.bind('ActiveSheetChanged', onSelect) } catch (_) { /* 事件名不被当前表格内核支持：跳过 */ }
   if (!st.__raFxSelPoll) {
     st.__raFxSelPoll = setInterval(() => {
       const alive = Array.from(st.hosts || []).some((h) => h && h.isConnected && h.__raView === 'content')
