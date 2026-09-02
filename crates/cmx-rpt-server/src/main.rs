@@ -64,18 +64,21 @@ async fn main() -> cmx_web_chassis::Result<()> {
     //   - /api/rpt/stats（大盘数据源）。
     //
     // chassis 默认把 router nest 到 /api 下；这里改用 nest_api(false) 自己 nest，好让根大盘 `/` 逃出 /api。
-    let api_router = report_routes::<()>()
+    // 业务 API：认证强制（jwt + 服务 APIKey；no-key/坏 key→401），内层 observe 采集身份。
+    let authed = report_routes::<()>()
+        // 合并报表:方案/范围/个别数/规则/往来录入 + 运行合并 + 工作底稿/合并分类账查询。
+        .merge(cmx_rpt_app::consol_routes::<()>())
+        .layer(axum::middleware::from_fn(cmx_web_monitor::observe))
+        .layer(axum::middleware::from_fn(cmx_rpt_app::auth_middleware));
+    // 免认证：大盘数据源 rpt/stats（根大盘 `/` 轮询）+ 前端页只读投递（门户 F3 反代 report 页 /
+    // 独立自投递自己的界面）——静态/公开内容，与 flow 同款置于 authed 之外。
+    let open = Router::new()
         .route("/rpt/stats", get(dashboard::rpt_stats))
-        // F2：报表微服务自持前端页只读投递（native + html），字节对齐门户信封，
-        // 供门户 F3 反代 report 拥有的页面取页请求；独立运行时也能自投递自己的界面。
-        // 资产目录遵循规范 v2（relPath 相对 index.json）；信封直用 cmx-api-types。
         .merge(cmx_form::serve::frontend_pages_routes::<(), cmx_api_types::Error>(
             cmx_form::serve::PageServeConfig::from_assets(),
         ))
-        // 合并报表:方案/范围/个别数/规则/往来录入 + 运行合并 + 工作底稿/合并分类账查询。
-        .merge(cmx_rpt_app::consol_routes::<()>())
-        // 可观测中间件：采集每请求 method/path/协议/状态/耗时，喂 /_mon 请求遥测面板。
         .layer(axum::middleware::from_fn(cmx_web_monitor::observe));
+    let api_router = Router::new().merge(authed).merge(open);
     let app_router = Router::new()
         // 根路径 → 报表业务监控大盘（报表/分类/期间；免认证，轮询 /api/rpt/stats）。
         .route("/", get(dashboard::dashboard))

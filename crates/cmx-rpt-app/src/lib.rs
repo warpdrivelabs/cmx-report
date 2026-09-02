@@ -12,6 +12,9 @@
 pub mod dashboard;
 pub mod handlers;
 
+pub mod auth;
+pub use auth::auth as auth_middleware;
+
 use axum::Router;
 use axum::routing::{get, post};
 

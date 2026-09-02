@@ -61,6 +61,8 @@ cmx-form = { path = "../cmx-container/crates/libs/cmx-form", version = "0.1.12" 
 cmx-job-core = { path = "../cmx-container/crates/libs/cmx-job/cmx-job-core", version = "0.1.12" }
 # 特征定义（auth::context_scope：apply_ops 取当前办理人身份，task_local 与平台并行同源）
 cmx-traits = { path = "../cmx-container/crates/libs/cmx-traits", version = "0.1.12" }
+# 引擎应用层横切件：JWT 认证中间件唯一真源（auth::jwt；与 flow/onto 同款服务身份 + 委托令牌桥）
+cmx-engine-kit = { path = "../cmx-container/crates/libs/cmx-engine-kit", version = "0.1.12" }
 # 通用 HTTP 服务骨架（chassis）：flow/report/mdm-server 共用的启动/日志/中间件/优雅关闭骨架
 cmx-web-chassis = { path = "../cmx-container/crates/libs/cmx-web-chassis", version = "0.1.12" }
 # 通用技术监控：请求遥测 + 系统指标（CPU/内存/网络/磁盘）+ DB 连接池；与 chassis 并列组装

@@ -20,7 +20,19 @@ db_id = "fico-db"
 db_name = "报表平台库"
 db_type = "postgres"
 db_url = "postgres://dbuser_dba:9lWsRQY4i4VToPpkHcCRFzki@192.168.1.14:5432/cmx_fico"
-#db_url = "postgres://postgres:postgres@192.168.1.100:5433/fico"default = true
+#db_url = "postgres://postgres:postgres@192.168.1.100:5433/fico"
+default = true
+
+# —— 认证（与 flow-server-dev 同款；平台/onto 经 report proxy 转发时注入 X-API-Key + 委托令牌）——
+# report API 鉴权门（cmx-rpt-app::auth_middleware，收编 cmx-engine-kit::auth::jwt）。缺本段→中间件按默认放行。
+[auth]
+mode = "jwt"                # 生产务必 jwt（off 模式租户取 X-Tenant 头，越权隐患）
+jwt_alg = "HS256"
+jwt_secret = "a7k9m2p4x8q1w5e3r6t0y7u2i9o4p1"   # 须 = 平台签发 JWT 的密钥
+jwt_tenant_claim = "tenant"
+jwt_roles_claim = "roles"
+# 服务间 API Key（命中即免 JWT，key:回退租户）——须 = 平台 [service_auth].outgoing_api_key。
+api_keys = "cmx_sk_dev_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6:default"
 
 # —— 页面资产（[assets] 段：引擎自持 native/html 页面投递目录；env 覆盖 ASSETS__UI_NATIVE_DIR/ASSETS__UI_HTML_DIR）——
 [assets]

@@ -29,6 +29,8 @@ cmx-rpt-formula = { workspace = true }
 cmx-api-types = { workspace = true }
 # 当前办理人身份（apply_ops）：auth::context_scope task_local（infra，跨 ws path 进 cmx-container）
 cmx-traits = { workspace = true }
+# JWT 认证中间件唯一真源（auth::jwt）：报表 API 鉴权门，与 flow/onto 同款
+cmx-engine-kit = { workspace = true }
 # 配置中台（ConfigManager）：页面资产目录 assets_ui_* 直读（toml ← env 合并）
 cmx-utils = { workspace = true }
 # 页面只读投递（native/html-pages 通用路由，替代原 native_pages.rs；信封直用 cmx-api-types）
