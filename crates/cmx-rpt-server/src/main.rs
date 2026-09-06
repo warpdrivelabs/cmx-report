@@ -124,6 +124,14 @@ async fn main() -> cmx_web_chassis::Result<()> {
                 tracing::info!(databases = ?ids, "✅ 报表 tokio-pg 数据源已注册（[[databases]] 配置驱动）");
                 Ok(())
             })
+        })
+        // 认证预热（fail-fast）：ConfigManager 就绪后校验 [auth].mode——缺失/非法启动即 panic 终止，
+        // 而非等首个 authed 请求才在中间件里 panic（表现为连接重置 000，极难定位）。与 flow 同款。
+        .init("auth", |_meta| {
+            Box::pin(async {
+                cmx_rpt_app::auth_config_warmup();
+                Ok(())
+            })
         });
 
     let result = run(spec).await;

@@ -13,6 +13,18 @@ log_dir = "logs"
 log_level = "info"
 graceful_timeout_secs = 10
 
+# —— 认证（[auth] 段，ConfigManager 直读；与 cmx-flow 同款，验同一门户签发的 JWT）——
+# 缺本段 → JwtAuthConfig::load() 因 auth.mode 缺失而 panic → authed 路由每请求即重置(000)。
+[auth]
+mode = "jwt"                # jwt：验 Authorization: Bearer（off 模式取 X-Tenant 头，越权隐患）
+jwt_alg = "HS256"           # 与平台 JwtConfig 算法一致
+# ★ 此密钥必须 = 平台签发 JWT 的密钥（= cmx-flow 同值；平台 dev-local 若自定义则改这里）。
+jwt_secret = "a7k9m2p4x8q1w5e3r6t0y7u2i9o4p1"
+jwt_tenant_claim = "tenant"
+jwt_roles_claim = "roles"
+# ★ 服务间 API Key（命中免 JWT，key:回退租户）= 平台 [service_auth].outgoing_api_key。
+api_keys = "cmx_sk_dev_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6:default"
+
 # —— 数据源（标准 [[databases]] 段；BaseConfig 直读，db_id 固定 = RPT_DB_ID = "fico-db"）——
 # 报表数据字典物理表 cr_*（版式/单元格/浮动/来源绑定）全在 fico 库；缺段启动失败（无 URL 兜底）。
 [[databases]]

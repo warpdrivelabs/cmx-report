@@ -10,6 +10,10 @@ use axum::response::Response;
 
 use cmx_engine_kit::auth::jwt::{self, JwtSpec};
 
+/// 启动期预热认证配置（fail-fast）：`auth.mode` 缺失/非法时启动即 panic 终止，而非等首个
+/// authed 请求才在中间件里 panic（表现为连接重置 000，极难定位）。server bin 的 init 钩子调用。
+pub use jwt::auth_config_warmup;
+
 /// report 专属 JWT 参数：无 SSE 票据白名单、无票据消费回调。
 static SPEC: JwtSpec = JwtSpec::new("report", &[], None);
 

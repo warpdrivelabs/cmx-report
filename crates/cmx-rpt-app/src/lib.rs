@@ -14,6 +14,7 @@ pub mod handlers;
 
 pub mod auth;
 pub use auth::auth as auth_middleware;
+pub use auth::auth_config_warmup;
 
 use axum::Router;
 use axum::routing::{get, post};
