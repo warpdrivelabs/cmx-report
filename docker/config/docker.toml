@@ -1,0 +1,45 @@
+# cmx-rpt-server 容器配置模板（挂载覆盖 /app/config；数据库为占位地址）
+# 宿主侧服务用 host.docker.internal（docker run 需 --add-host=...:host-gateway）。
+
+[server]
+host = "0.0.0.0"
+port = 8092
+log_dir = "logs"
+log_level = "info"
+graceful_timeout_secs = 10
+
+# 报表数据字典物理表 cr_* 全在 fico 库；缺段启动失败
+[[databases]]
+db_id = "fico-db"
+db_name = "报表平台库"
+db_type = "postgres"
+db_url = "postgres://postgres:postgres@host.docker.internal:5432/cmx_fico"
+default = true
+
+# ★ jwt_secret 必须 = 平台签发 JWT 的密钥
+[auth]
+mode = "jwt"
+jwt_alg = "HS256"
+jwt_secret = "a7k9m2p4x8q1w5e3r6t0y7u2i9o4p1"
+jwt_tenant_claim = "tenant"
+jwt_roles_claim = "roles"
+api_keys = "cmx_sk_dev_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6:default"
+
+# 页面资产（镜像内随包 cmx-container/assets/report）
+[assets]
+ui_native_dir = "/app/assets/report/web/ui-native"
+ui_html_dir = "/app/assets/report/web/ui-html"
+
+[service_rpc]
+default_transport = "http"
+nacos_group = "DEFAULT_GROUP"
+timeout_ms = 30000
+retry_max = 1
+
+[service_rpc.services]
+flow = { url = "http://127.0.0.1:8091", discovery = "cmx-flow-server" }
+
+# 关账流程对接
+[consol.flow]
+definition_key = "consol_close"
+initiator = "consol-close"
