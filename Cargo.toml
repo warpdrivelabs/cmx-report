@@ -95,13 +95,17 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # 自动读取 .env（与门户 cmx-platform-app / flow 一致：统一启动契约，bin 自读 .env 无需手动 source）
 dotenvy = "0.15"
 
+# 开发 profile：debug = 1 仅保留行号表（backtrace 仍有文件名+行号可定位），裁掉默认的全量
+# DWARF（debug = 2）——链接更快、target 体积大幅缩小。需要调试器检视变量（gdb/lldb print
+# 结构体字段）时临时改回 debug = 2 重编译即可；其余项保持 Cargo dev 默认，不显式覆盖。
+[profile.dev]
+debug = 1
+
 [profile.release]
 opt-level = 3
 lto = "thin"
 
-# 测试 profile（继承 dev）：专为 cargo test 裁剪体积
-# debug = 1：仅保留行号表（backtrace 仍有行号可定位），测试二进制体积大幅缩小
-# incremental = true：保留增量编译，改动后重跑测试更快
 [profile.test]
-debug = 1
-incremental = true
+# 显式继承 dev，让 cargo test 也用上 dev 里自定义的 debug = 1
+# 不写这行的话，test 只继承 dev 的内置默认值，而不是你在 [profile.dev] 里覆盖后的值
+inherits = "dev"
