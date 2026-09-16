@@ -23,6 +23,11 @@ use axum::routing::{get, post};
 pub mod consol;
 pub use consol::consol_routes;
 
+// 路由装配契约与组合器（真源 cmx-engine-kit；bin 组合根经本 crate 引用，免加依赖）。
+pub use cmx_engine_kit::routes::{ModuleRoutes, ModuleSet};
+pub mod module;
+pub use module::{ConsolModule, ReportCoreModule, RptStatsModule};
+
 pub fn report_routes<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,

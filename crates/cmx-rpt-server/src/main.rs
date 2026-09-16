@@ -17,8 +17,9 @@
 
 use axum::Router;
 use axum::routing::get;
+use cmx_form::serve::{FormPagesModule, PageServeConfig};
 use cmx_rpt_app::dashboard;
-use cmx_rpt_app::report_routes;
+use cmx_rpt_app::{ConsolModule, ModuleSet, ReportCoreModule, RptStatsModule};
 use cmx_rpt_model::RPT_DB_ID;
 use cmx_web_chassis::{BannerSpec, ChassisConfig, ServiceSpec, run};
 
@@ -64,25 +65,8 @@ async fn main() -> cmx_web_chassis::Result<()> {
     //   - /api/rpt/stats（大盘数据源）。
     //
     // chassis 默认把 router nest 到 /api 下；这里改用 nest_api(false) 自己 nest，好让根大盘 `/` 逃出 /api。
-    // 业务 API：认证强制（jwt + 服务 APIKey；no-key/坏 key→401），内层 observe 采集身份。
-    let authed = report_routes::<()>()
-        // 合并报表:方案/范围/个别数/规则/往来录入 + 运行合并 + 工作底稿/合并分类账查询。
-        .merge(cmx_rpt_app::consol_routes::<()>())
-        .layer(axum::middleware::from_fn(cmx_web_monitor::observe))
-        .layer(axum::middleware::from_fn(cmx_rpt_app::auth_middleware));
-    // 免认证：大盘数据源 rpt/stats（根大盘 `/` 轮询）+ 前端页只读投递（门户 F3 反代 report 页 /
-    // 独立自投递自己的界面）——静态/公开内容，与 flow 同款置于 authed 之外。
-    let open = Router::new()
-        .route("/rpt/stats", get(dashboard::rpt_stats))
-        .merge(cmx_form::serve::frontend_pages_routes::<(), cmx_api_types::Error>(
-            cmx_form::serve::PageServeConfig::from_assets(),
-        ))
-        .layer(axum::middleware::from_fn(cmx_web_monitor::observe));
-    let api_router = Router::new().merge(authed).merge(open);
-    let app_router = Router::new()
-        // 根路径 → 报表业务监控大盘（报表/分类/期间；免认证，轮询 /api/rpt/stats）。
-        .route("/", get(dashboard::dashboard))
-        .nest("/api", api_router);
+    // 模块化装配（authed / open 双切片，open 现状带 observe 层）见 [`build_app_router`]，与契约测试共用。
+    let app_router = build_app_router();
 
     // 通用技术监控：/_mon 技术页 + 系统采样器由 chassis 自动挂。这里设服务名 + 声明拓扑
     // （独立 report-server 自身即报表平台，能力为「进程内内嵌」，无下游反代）。
@@ -139,4 +123,133 @@ async fn main() -> cmx_web_chassis::Result<()> {
     // 否则 Err 路径会跳过注销（实例要等 Nacos 心跳超时才摘除）。
     cmx_service_base::shutdown_infra().await;
     result
+}
+
+// ============================================================================
+// bin 组合根装配（模块化）
+// ============================================================================
+
+/// authed 切片：报表业务路由（设计/应用工作台 + 计算 + 合并报表域）。
+///
+/// 返回**未加层**的路由器——main 按现状序「observe（内）→ auth（外）」加层；路由契约
+/// 测试直接探测本函数（auth 中间件对无凭证请求统一 401，会掩盖 405/404 区分）。
+fn build_authed_router() -> Router {
+    ModuleSet::<()>::new(vec![])
+        .with(Box::new(ReportCoreModule))
+        .with(Box::new(ConsolModule))
+        .fold()
+}
+
+/// open 切片：大盘数据源 `/rpt/stats`（根大盘轮询，现状免认证）+ 前端页只读投递。
+///
+/// 与 flow 同款置于 authed 之外；**现状整片带 observe 遥测层，保持**。前端页错误体经
+/// `cmx_api_types::Error` 保持历史 code=404 语义。
+fn build_open_router() -> Router {
+    ModuleSet::<()>::new(vec![])
+        .with(Box::new(RptStatsModule))
+        .with(Box::new(FormPagesModule::<cmx_api_types::Error>::new(
+            PageServeConfig::from_assets(),
+        )))
+        .fold()
+}
+
+/// 全量装配：根级大盘 + `/api`（authed 切片 + open 切片）。
+///
+/// 中间件层序保持现状：authed 内 observe（内层，采集身份）→ auth（外层，先跑，认证强制
+/// jwt + 服务 APIKey，no-key/坏 key→401）；open 整片 observe。
+fn build_app_router() -> Router {
+    let authed = build_authed_router()
+        .layer(axum::middleware::from_fn(cmx_web_monitor::observe))
+        .layer(axum::middleware::from_fn(cmx_rpt_app::auth_middleware));
+    let open = build_open_router()
+        .layer(axum::middleware::from_fn(cmx_web_monitor::observe));
+    let api_router = Router::new().merge(authed).merge(open);
+    Router::new()
+        // 根路径 → 报表业务监控大盘（报表/分类/期间；免认证，轮询 /api/rpt/stats）。
+        .route("/", get(dashboard::dashboard))
+        .nest("/api", api_router)
+}
+
+// ============================================================================
+// 路由契约守护（bin 装配级）
+// ============================================================================
+
+#[cfg(test)]
+mod route_contract {
+    //! 静态清单以改造前 main.rs 逐条抄录（改造后不变即零回归）。
+    //!
+    //! 探测法：以 **OPTIONS** 探测——命中已有路径返回 405（方法不符），未命中 404；
+    //! 不触发任何 handler。authed 切片在加层前探测（原因见 [`super::build_authed_router`]）。
+
+    use super::{build_app_router, build_authed_router, build_open_router};
+    use axum::Router;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    /// authed 切片（改造前 main.rs 挂载清单抽样：report-design / report-source-bindings / consol / compute）。
+    const AUTHED: &[&str] = &[
+        "/report-design/reports",
+        "/report-source-bindings",
+        "/consol/schemes",
+        "/rpt/compute",
+    ];
+
+    /// open / 根级（改造前 main.rs 挂载清单：大盘、stats、页面端点——参数化段以具体 id 探测）。
+    const OPEN_OR_ROOT: &[&str] = &[
+        "/",
+        "/api/rpt/stats",
+        "/api/native-pages",
+        "/api/native-pages/batch",
+        "/api/native-pages/probe-id",
+        "/api/html-pages",
+        "/api/html-pages/probe-id",
+    ];
+
+    async fn probe(router: Router, method: &str, path: &str) -> StatusCode {
+        let req = Request::builder()
+            .method(method)
+            .uri(path)
+            .body(Body::empty())
+            .unwrap();
+        router.oneshot(req).await.unwrap().status()
+    }
+
+    #[tokio::test]
+    async fn authed_paths_mounted() {
+        let router = build_authed_router();
+        for path in AUTHED {
+            let status = probe(router.clone(), "OPTIONS", path).await;
+            assert_ne!(status, StatusCode::NOT_FOUND, "authed 路径丢失: {path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn open_and_root_paths_mounted() {
+        let router = build_app_router();
+        for path in OPEN_OR_ROOT {
+            let status = probe(router.clone(), "OPTIONS", path).await;
+            assert_ne!(status, StatusCode::NOT_FOUND, "open/根级路径丢失: {path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn open_slice_mounts_without_auth_layers() {
+        // 防误把 stats/pages 挂进 authed（免认证面被收窄属行为回归）：open 切片自身
+        // （不加层）可直接探测到对应端点。
+        let router = build_open_router();
+        for path in ["/rpt/stats", "/native-pages", "/html-pages"] {
+            let status = probe(router.clone(), "OPTIONS", path).await;
+            assert_ne!(status, StatusCode::NOT_FOUND, "open 切片路径丢失: {path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn unknown_path_is_404() {
+        let router = build_app_router();
+        for path in ["/api/__definitely_absent__", "/__definitely_absent__"] {
+            let status = probe(router.clone(), "OPTIONS", path).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "未注册路径竟命中: {path}");
+        }
+    }
 }

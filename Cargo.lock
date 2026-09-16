@@ -821,6 +821,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+ "utoipa",
 ]
 
 [[package]]
@@ -840,6 +841,7 @@ dependencies = [
  "axum",
  "chrono",
  "cmx-api-types",
+ "cmx-engine-kit",
  "cmx-jsonstore",
  "cmx-utils",
  "serde",
@@ -962,6 +964,7 @@ dependencies = [
  "cmx-web-monitor",
  "dotenvy",
  "tokio",
+ "tower",
  "tracing",
 ]
 
